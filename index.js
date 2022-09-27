@@ -12,8 +12,6 @@ const port = process.env.PORT || 3000;
 const cors = require("cors");
 
 //SEMANTEC9000
-GUN = require('gun');
-gun = GUN();
 
 //Geometric mean
 function geometricMean(array) {
@@ -377,9 +375,7 @@ async function executeInference(sentence) {
     }
 }
 
-
-function makeGraph(sentence) {
-  let graph = {}
+function splitSentence(sentence) {
   //Splitting spaces
   sentence = sentence.split(" ");
   //Splitting sentences with punctuations... manquera les crochets/slash/tirets
@@ -396,7 +392,6 @@ function makeGraph(sentence) {
   });
   result = []
   for(let el of result2) {
-    console.log(el);
   //Transformer "du" en "de le"
     if(el=="du") {
       result.push("de")
@@ -419,7 +414,29 @@ function makeGraph(sentence) {
   result.forEach((item, i) => {
     result2 = [...result, ...item.split(/([cdjlmnsty]')/)]
   });
-  console.log(result)
+  return result;
+}
+
+async function makeGraph(sentence) {
+  sentence = splitSentence(sentence);
+  let graph = {}
+  let previousNode = -1;
+  let node = -1;
+  let word = "";
+  for(let nodeText of sentence) {
+    //TODO : A paralléliser ou barre de chargement
+    word = await getWord(nodeText)
+    graph[word.id] = {
+      word:word.word,
+      link:{}
+      //all:word
+    }
+    if(previousNode!=-1) {
+      graph[previousNode]["link"][word.id] = "r_succ";
+    }
+    previousNode = word.id;
+  }
+  console.log(graph);
   return graph
 }
 
