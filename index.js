@@ -392,6 +392,7 @@ function splitSentence(sentence) {
   });
   result = []
   for(let el of result2) {
+    //TODO : Il faudra transformer les du en de le après la recherche des mots composés
   //Transformer "du" en "de le"
     if(el=="du") {
       result.push("de")
@@ -465,7 +466,7 @@ async function makeGraph(sentence) {
     link: {}
   }
   graph[previousNode]["link"][-3] = "r_succ"
-  
+
   return graph
 }
 
