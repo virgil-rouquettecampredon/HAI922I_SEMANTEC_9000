@@ -448,6 +448,30 @@ async function main() {
   makeGraph("Le petit chat boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat.")
 }
 
+/**
+ * Exemple of sentence variable
+ * @param sentence
+ * $x r_succ &y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; another rules ...
+ */
+function analyzeRules(sentence) {
+    let conclusionRules = [];
+    let allRules = [];
+    let tableRules = sentence.split(";");
+    tableRules.forEach((item, i) => {
+        let rule = item.split("=>");
+        conclusionRules.push(rule[1]);
+        let condition = rule[0].split("&");
+        condition.forEach((item, i) => {
+            //each condition is stored in a same row that the same index in conclusionRules
+            let eachWord = item.split(" ");
+            //store anyRules into allRules
+            allRules.push(eachWord);
+        });
+        //separe each Rules into allRules
+    });
+    return allRules;
+}
+
 main().then(r => console.log("Done"));
 
 
