@@ -434,22 +434,38 @@ async function getRpos(node) {
 async function makeGraph(sentence) {
   sentence = splitSentence(sentence);
   let graph = {}
+  //Keeping track of the previous node for r_succ
   let previousNode = -1;
-  let node = -1;
   let word = "";
   for(let nodeText of sentence) {
     //TODO : A paralléliser ou barre de chargement
     word = await getWord(nodeText)
+    //Creating a node from the word
     graph[word.id] = {
       word:word.word,
       link:{},
       type:await getRpos(word)
     }
+    //Plugging it to the previous node
     if(previousNode!=-1) {
       graph[previousNode]["link"][word.id] = "r_succ";
+    } else {
+    //Special case for _BEGIN node to easily recreate the whole sentence
+      graph[-2] = {
+        word:"_BEGIN",
+        link:{}
+      }
+      graph[-2]["link"][word.id] = "r_succ"
     }
     previousNode = word.id;
   }
+  //Special case for _END node
+  graph[-3] = {
+    word:"_END",
+    link: {}
+  }
+  graph[previousNode]["link"][-3] = "r_succ"
+  
   return graph
 }
 
