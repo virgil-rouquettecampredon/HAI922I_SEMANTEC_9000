@@ -1,7 +1,6 @@
 //Mots-composés arbre
 const fs = require("fs");
 const readline = require("readline")
-//TODO : Vérifier les caractères, certains ne passent pas
 
 function splitSentence(sentence) {
   //Splitting spaces
@@ -42,8 +41,7 @@ function splitSentence(sentence) {
 }
 
 async function main() {
-  //TODO : Change type of input to ANSI
-  const fileStream = fs.createReadStream('MWE.txt', {encoding : null});
+  const fileStream = fs.createReadStream('MWE.txt', {encoding : "latin1"});
   const rl = readline.createInterface({
       input: fileStream,
       crlfDelay: Infinity
@@ -61,7 +59,6 @@ async function main() {
     if(!line.startsWith("//") && (line!="") && (line!=" ")) {
       lineSplitted = line.split(';')
       //lineSplitted[1] will be the whole composed word
-      //TODO : Real split same as index.js
       wordSplitted = splitSentence(lineSplitted[1].slice(1,-1))
       currentNode = tree["_begin"];
       for(let word of wordSplitted) {
@@ -74,8 +71,6 @@ async function main() {
     }
   }
   fs.writeFileSync(`MWE.json`, JSON.stringify(tree, null, 4));
-  const treeLoad = JSON.parse(fs.readFileSync("MWE.json"));
-  console.log(treeLoad["_begin"]["mort-né"]);
 }
 
 main()
