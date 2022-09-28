@@ -417,6 +417,20 @@ function splitSentence(sentence) {
   return result;
 }
 
+async function getRpos(node) {
+  let result = []
+  for(let r of node.outgoingRelationship) {
+    if(r.type==4) {
+      if(r.weight>0) {
+        result.push({"r_pos" : node.nodeTerms[r.node].name, "weight": r.weight});
+      } else {
+        result.push({"r_pos<0" : node.nodeTerms[r.node].name, "weight": r.weight});
+      }
+    }
+  }
+  return result
+}
+
 async function makeGraph(sentence) {
   sentence = splitSentence(sentence);
   let graph = {}
@@ -428,15 +442,14 @@ async function makeGraph(sentence) {
     word = await getWord(nodeText)
     graph[word.id] = {
       word:word.word,
-      link:{}
-      //all:word
+      link:{},
+      type:await getRpos(word)
     }
     if(previousNode!=-1) {
       graph[previousNode]["link"][word.id] = "r_succ";
     }
     previousNode = word.id;
   }
-  console.log(graph);
   return graph
 }
 
@@ -446,6 +459,7 @@ let relations = JSON.parse(fs.readFileSync("./relations.json"));
 
 async function main() {
   makeGraph("Le petit chat boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat.")
+
 }
 
 main().then(r => console.log("Done"));
