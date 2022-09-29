@@ -116,7 +116,7 @@ async function getWordFromRezoDump(word) {
     let errorString = `Le terme '${word}' n'existe pas !`;
     let error = decodedData.match(errorString);
     if (error) {
-        cached.push({id: null, word: word, state:"NOT_EXIST"});
+        cached.push({id: null, word: word, state: "NOT_EXIST"});
         fs.writeFileSync("./cache/cached.json", JSON.stringify(cached, null, 4));
         throw new Error(word + " n'est pas un mot valide");
     } else {
@@ -135,7 +135,7 @@ async function getWordFromRezoDump(word) {
 
         //Save raw file (in windows-1252)
         fs.writeFileSync(`./cache/${id}.html`, decodedData);
-        cached.push({id: id, word: word, state:"HTML"});
+        cached.push({id: id, word: word, state: "HTML"});
 
         //Save cached.json
         fs.writeFileSync("./cache/cached.json", JSON.stringify(cached, null, 4));
@@ -223,7 +223,7 @@ async function readLineByLine(wordId, wordString) {
                             break;
                         case "outgoingRelationship":
                             lineSplitted = line.split(";");
-                            if(lineSplitted.length > 1) {
+                            if (lineSplitted.length > 1) {
                                 word["outgoingRelationship"].push({
                                     node: parseInt(lineSplitted[3]),
                                     type: parseInt(lineSplitted[4]),
@@ -233,7 +233,7 @@ async function readLineByLine(wordId, wordString) {
                             break;
                         case "ingoingRelationship":
                             lineSplitted = line.split(";");
-                            if(lineSplitted.length > 1) {
+                            if (lineSplitted.length > 1) {
                                 word["ingoingRelationship"].push({
                                     node: parseInt(lineSplitted[2]),
                                     type: parseInt(lineSplitted[4]),
@@ -271,19 +271,23 @@ async function findLinkBetweenWords(w1, r, w2) {
     //Read all ingoing nodes for word2
     let word2 = words[1].ingoingRelationship;
 
-    if(word1 === undefined || word2 === undefined) {
+    if (word1 === undefined || word2 === undefined) {
         throw new Error("Le dump est incomplet, abandon");
     }
 
     let word1filtered = word1.filter(relation => relation.type === relationId);
     let word1filterWeighted = {}
-    word1filtered.forEach(relation => { word1filterWeighted[relation.node] = relation.weight});
+    word1filtered.forEach(relation => {
+        word1filterWeighted[relation.node] = relation.weight
+    });
 
 
     //Keep only the nodes that are related to the relation
     let word2filtered = word2.filter(relation => relation.type === relationId);
     let word2filterWeighted = {}
-    word2filtered.forEach(relation => { word2filterWeighted[relation.node] = relation.weight});
+    word2filtered.forEach(relation => {
+        word2filterWeighted[relation.node] = relation.weight
+    });
 
     //Check if the relation exists between the two words
     //w1 relation x new_relation w2
@@ -300,9 +304,9 @@ async function findLinkBetweenWords(w1, r, w2) {
                 words: [w1, words[1].nodeTerms[relation.node].name, w2],
                 relations: [r, words[1].relationType[relation.type].name],
                 weights: [word1filterWeighted[relation.node], relation.weight],
-                scoreGeo:geometricMean([word1filterWeighted[relation.node], relation.weight]),
-                scoreCube:rootMeanSquare([word1filterWeighted[relation.node], relation.weight]),
-                scoreMoy:mean([word1filterWeighted[relation.node], relation.weight])
+                scoreGeo: geometricMean([word1filterWeighted[relation.node], relation.weight]),
+                scoreCube: rootMeanSquare([word1filterWeighted[relation.node], relation.weight]),
+                scoreMoy: mean([word1filterWeighted[relation.node], relation.weight])
             };
         }
     }
@@ -321,9 +325,9 @@ async function findLinkBetweenWords(w1, r, w2) {
                 words: [w1, words[0].nodeTerms[relation.node].name, w2],
                 relations: [words[0].relationType[relation.type].name, r],
                 weights: [relation.weight, word2filterWeighted[relation.node]],
-                scoreGeo:geometricMean([relation.weight, word2filterWeighted[relation.node]]),
-                scoreCube:rootMeanSquare([relation.weight, word2filterWeighted[relation.node]]),
-                scoreMoy:mean([relation.weight, word2filterWeighted[relation.node]])
+                scoreGeo: geometricMean([relation.weight, word2filterWeighted[relation.node]]),
+                scoreCube: rootMeanSquare([relation.weight, word2filterWeighted[relation.node]]),
+                scoreMoy: mean([relation.weight, word2filterWeighted[relation.node]])
             };
         }
     }
@@ -337,8 +341,8 @@ function prettyPrintRelations(relations) {
 
     for (let relation of relationsArray) {
         let i = 0;
-        while(i<relation.relations.length) {
-            process.stdout.write(relation.words[i] + " " + relation.relations[i] + " (" + relation.weights[i] + ") " + relation.words[i+1] + " & ");
+        while (i < relation.relations.length) {
+            process.stdout.write(relation.words[i] + " " + relation.relations[i] + " (" + relation.weights[i] + ") " + relation.words[i + 1] + " & ");
             i++;
         }
         process.stdout.write("(scores : cube = " + relation.scoreCube + " / geo = " + relation.scoreGeo + " / somme = " + relation.scoreMoy + ") \n");
@@ -353,7 +357,7 @@ async function executeInference(sentence) {
     let words = sentence.split(" ");
     //Check if one of the words is a relation
     let relationsFound = words.filter(word => word in relations);
-    if(relationsFound.length === 0) {
+    if (relationsFound.length === 0) {
         throw new Error("La relation n'existe pas, avez-vous fait une faute d'orthographe ?");
     } else if (relationsFound.length === 1) {
         //Get the words and the relation
@@ -376,135 +380,192 @@ async function executeInference(sentence) {
 }
 
 function splitSentence(sentence) {
-  //Splitting spaces
-  sentence = sentence.split(" ");
-  //Splitting sentences with punctuations... manquera les crochets/slash/tirets
-  let result = []
-  sentence.forEach((item, i) => {
-    result = [...result, ...item.split(/([,.:"«»()!?…]+)/)]
-  });
-  result2 = []
-  //Attention aux points de suspension
-  let point = 0;
-  //Split avec c' / d' / j' / l' / m' / n' / s' / t' / y' et attention à la casse
-  result.forEach((item, i) => {
-    result2 = [...result2, ...item.split(/([cdjlmnstyCDJLMNSTY]')/)]
-  });
-  result = []
-  for(let el of result2) {
-    //TODO : Il faudra transformer les du en de le après la recherche des mots composés
-  //Transformer "du" en "de le"
-    if(el=="du") {
-      result.push("de")
-      result.push("le")
-    } else if(el==".") {
-      point++
-      result.push(el)
-    } else if(point==3) {
-      point = 0
-      result.pop()
-      result.pop()
-      result.pop()
-      result.push("...")
-    } else if (el!=''){
-      point = 0
-      result.push(el)
+    //Splitting spaces
+    sentence = sentence.split(" ");
+    //Splitting sentences with punctuations... manquera les crochets/slash/tirets
+    let result = []
+    sentence.forEach((item, i) => {
+        result = [...result, ...item.split(/([,.:"«»()!?…]+)/)]
+    });
+    result2 = []
+    //Attention aux points de suspension
+    let point = 0;
+    //Split avec c' / d' / j' / l' / m' / n' / s' / t' / y' et attention à la casse
+    result.forEach((item, i) => {
+        result2 = [...result2, ...item.split(/([cdjlmnstyCDJLMNSTY]')/)]
+    });
+    result = []
+    for (let el of result2) {
+        //TODO : Il faudra transformer les du en de le après la recherche des mots composés
+        //Transformer "du" en "de le"
+        if (el == "du") {
+            result.push("de")
+            result.push("le")
+        } else if (el == ".") {
+            point++
+            result.push(el)
+        } else if (point == 3) {
+            point = 0
+            result.pop()
+            result.pop()
+            result.pop()
+            result.push("...")
+        } else if (el != '') {
+            point = 0
+            result.push(el)
+        }
     }
-  }
-  result2 = []
-  result.forEach((item, i) => {
-    result2 = [...result, ...item.split(/([cdjlmnsty]')/)]
-  });
-  return result;
+    result2 = []
+    result.forEach((item, i) => {
+        result2 = [...result, ...item.split(/([cdjlmnsty]')/)]
+    });
+    return result;
 }
 
 async function getRpos(node) {
-  let result = []
-  for(let r of node.outgoingRelationship) {
-    if(r.type==4) {
-      if(r.weight>0) {
-        result.push({"r_pos" : node.nodeTerms[r.node].name, "weight": r.weight});
-      } else {
-        result.push({"r_pos<0" : node.nodeTerms[r.node].name, "weight": r.weight});
-      }
+    let result = []
+    for (let r of node.outgoingRelationship) {
+        if (r.type == 4) {
+            if (r.weight > 0) {
+                result.push({"r_pos": node.nodeTerms[r.node].name, "weight": r.weight});
+            } else {
+                result.push({"r_pos<0": node.nodeTerms[r.node].name, "weight": r.weight});
+            }
+        }
     }
-  }
-  return result
+    return result
 }
 
 async function makeGraph(sentence) {
-  sentence = splitSentence(sentence);
-  let graph = {}
-  //Keeping track of the previous node for r_succ
-  let previousNode = -1;
-  let word = "";
-  for(let nodeText of sentence) {
-    //TODO : A paralléliser ou barre de chargement
-    word = await getWord(nodeText)
-    //Creating a node from the word
-    graph[word.id] = {
-      word:word.word,
-      link:{},
-      type:await getRpos(word)
+    sentence = splitSentence(sentence);
+    let graph = {}
+    //Keeping track of the previous node for r_succ
+    let previousNode = -1;
+    let word = "";
+    for (let nodeText of sentence) {
+        //TODO : A paralléliser ou barre de chargement
+        word = await getWord(nodeText)
+        //Creating a node from the word
+        graph[word.id] = {
+            word: word.word,
+            link: {},
+            type: await getRpos(word)
+        }
+        //Plugging it to the previous node
+        if (previousNode != -1) {
+            graph[previousNode]["link"][word.id] = "r_succ";
+        } else {
+            //Special case for _BEGIN node to easily recreate the whole sentence
+            graph[-2] = {
+                word: "_BEGIN",
+                link: {},
+                type: []
+            }
+            graph[-2]["link"][word.id] = "r_succ"
+        }
+        previousNode = word.id;
     }
-    //Plugging it to the previous node
-    if(previousNode!=-1) {
-      graph[previousNode]["link"][word.id] = "r_succ";
-    } else {
-    //Special case for _BEGIN node to easily recreate the whole sentence
-      graph[-2] = {
-        word:"_BEGIN",
-        link:{}
-      }
-      graph[-2]["link"][word.id] = "r_succ"
+    //Special case for _END node
+    graph[-3] = {
+        word: "_END",
+        link: {},
+        type: []
     }
-    previousNode = word.id;
-  }
-  //Special case for _END node
-  graph[-3] = {
-    word:"_END",
-    link: {}
-  }
-  graph[previousNode]["link"][-3] = "r_succ"
+    graph[previousNode]["link"][-3] = "r_succ"
 
-  return graph
-}
-
-
-//Read relations.json
-let relations = JSON.parse(fs.readFileSync("./relations.json"));
-
-async function main() {
-  makeGraph("Le petit chat boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat.")
-
+    return graph
 }
 
 /**
  * Exemple of sentence variable
  * @param sentence
- * $x r_succ &y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; another rules ...
+ * $x r_succ $y&$x r_pos NOM&$y r_pos ADJ => $y r_caracc $x; another rules ...
  */
+
 function analyzeRules(sentence) {
     let conclusionRules = [];
     let allRules = [];
     let tableRules = sentence.split(";");
     tableRules.forEach((item, i) => {
         let rule = item.split("=>");
-        conclusionRules.push(rule[1]);
         let condition = rule[0].split("&");
+        let oneCondition = [];
         condition.forEach((item, i) => {
             //each condition is stored in a same row that the same index in conclusionRules
             let eachWord = item.split(" ");
             //store anyRules into allRules
-            allRules.push(eachWord);
+            let filteredCondition = eachWord.filter(function (value, index, arr) {
+                return value != ''
+            });
+            oneCondition.push(filteredCondition);
         });
+        allRules.push(oneCondition);
         //separe each Rules into allRules
+        let conclusion = rule[1].split(" ");
+        let filteredConclusion = conclusion.filter(function (value, index, arr) {
+            return value != ''
+        });
+        conclusionRules.push(filteredConclusion);
     });
-    return allRules;
+    return [allRules, conclusionRules];
+}
+
+//returns all word of kind type
+function getWordType(type, sentenceJSON) {
+    let result = []
+    for (let node in sentenceJSON) {
+        for (let r_pos of sentenceJSON[node].type) {
+            if ('r_pos' in r_pos) {
+                if (r_pos.r_pos.startsWith(type)) {
+                    result.push(sentenceJSON[node].word)
+                }
+            }
+        }
+    }
+    return result;
+
+}
+
+//function that create a link between two words
+function createLinkBetweenWords(word1, word2, relation, sentenceJSON) {
+    sentenceJSON.word1.link.word2 = relation;
+}
+
+//Function like interpret Rules in allRules, when one column is true, create in sentenceJson the relation in conclusionRules
+function interpretRules(allRules, conclusionRules, sentenceJSON) {
+    for (let i = 0; i < allRules.length; i++) {
+        let isTrue = true;
+        for (let j = 0; j < allRules[i].length; j++) {
+            let currentWord = sentenceJSON[-2]; //_BEGIN = id : -2
+            while(isTrue){
+                allRules[i].forEach((item, z) => {
+                    let dictionary = {};
+                    if(!(item[0] in dictionary)){
+                        dictionary[item[0]] = currentWord.word;
+                    }
+
+                });
+
+            }
+        }
+    }
+}
+
+//Read relations.json
+let relations = JSON.parse(fs.readFileSync("./relations.json"));
+
+async function main() {
+    let sentenceJSON = makeGraph("Le petit chat boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat.");
+    let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; $x r_succ $y => $y r_caracc $x");
+    console.log(getWordType('Adj', await sentenceJSON));
 }
 
 main().then(r => console.log("Done"));
 
+/**
+ * Outgoing for relationship 4 to find kinf of word
+ * Thread program to be scalable
+ */
 
 // app.use(cors());
 //
