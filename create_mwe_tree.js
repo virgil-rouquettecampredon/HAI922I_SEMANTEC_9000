@@ -67,10 +67,11 @@ async function main() {
         }
         currentNode = currentNode[word]
       }
+      //TODO : Replace with shorter keyword for filesize
       currentNode["_isDone"] = true;
     }
   }
-  fs.writeFileSync(`MWE.json`, JSON.stringify(tree, null, 4));
+  fs.writeFileSync(`MWE.json`, JSON.stringify(tree));
 }
 
 main()
