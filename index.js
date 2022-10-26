@@ -12,6 +12,7 @@ const port = process.env.PORT || 3000;
 const cors = require("cors");
 
 //SEMANTEC9000
+const MWE = JSON.parse(fs.readFileSync("MWE.json"))
 
 //Geometric mean
 function geometricMean(array) {
@@ -379,47 +380,25 @@ async function executeInference(sentence) {
     }
 }
 
-function splitSentence(sentence) {
-    //Splitting spaces
-    sentence = sentence.split(" ");
-    //Splitting sentences with punctuations... manquera les crochets/slash/tirets
-    let result = []
-    sentence.forEach((item, i) => {
-        result = [...result, ...item.split(/([,.:"«»()!?…]+)/)]
-    });
-    result2 = []
-    //Attention aux points de suspension
-    let point = 0;
-    //Split avec c' / d' / j' / l' / m' / n' / s' / t' / y' et attention à la casse
-    result.forEach((item, i) => {
-        result2 = [...result2, ...item.split(/([cdjlmnstyCDJLMNSTY]')/)]
-    });
-    result = []
-    for (let el of result2) {
-        //TODO : Il faudra transformer les du en de le après la recherche des mots composés
-        //Transformer "du" en "de le"
-        if (el == "du") {
-            result.push("de")
-            result.push("le")
-        } else if (el == ".") {
-            point++
-            result.push(el)
-        } else if (point == 3) {
-            point = 0
-            result.pop()
-            result.pop()
-            result.pop()
-            result.push("...")
-        } else if (el != '') {
-            point = 0
-            result.push(el)
-        }
+//Return an array of array with sentences and words/composedwords
+async function findComposedWords(graph) {
+  let posLocal = 0;
+  let posGlobal = 0;
+  while(posGlobal<graph.length) {
+    posLocal = posGlobal;
+    let currentWord = ""
+    let MWE_pos = MWE["_begin"];
+    while(graph[posLocal].word in MWE_pos && posLocal<=graph.length) {
+      MWE_pos = MWE_pos[graph[posLocal].word];
+      //TODO : Add separator back
+      currentWord += graph[posLocal].word + graph[posLocal].separator;
+      if("_d" in MWE_pos) {
+        console.log("Found word : " + currentWord);
+      }
+      posLocal+=1;
     }
-    result2 = []
-    result.forEach((item, i) => {
-        result2 = [...result, ...item.split(/([cdjlmnsty]')/)]
-    });
-    return result;
+    posGlobal+=1;
+  }
 }
 
 async function getRpos(node) {
@@ -436,52 +415,99 @@ async function getRpos(node) {
     return result
 }
 
+//Split a string into multiple words, while keeping the splitters
+function splitSentence(sentence) {
+    //TODO : Check whether JeuxDeMots uses a mix of both … and ... or not
+    //Replace ... with …
+    sentence = sentence.replace(/\.\.\./g, "…");
+    //Split the sentence using the following separators : . , ; : ! ? ( ) " « » … c' d' j' l' m' n' s' t' y' qu'
+    //TODO : Use positive match instead of negative to avoid having to remove the empty strings
+    let words = sentence.split(/([ .,;:!?()«»…"]|[cdjlmnstyCDJLMNSTY]'|qu')/);
+    //Remove empty strings
+    words = words.filter(word => word !== "");
+    return words;
+}
+
+function beginNode() {
+    return {
+        word: "_BEGIN",
+        link: {},
+        type: [],
+        pos: 0,
+        separator: ''
+    }
+}
+
+function endNode(pos) {
+    return {
+        word: "_END",
+        link: {},
+        type: [],
+        pos: pos,
+    }
+}
+
 async function makeGraph(sentence) {
+    //TODO : Change the index by the sentence position, not the index of the word, in case there are repeating words
     sentence = splitSentence(sentence);
     let graph = {}
     //Keeping track of the previous node for r_succ
-    let previousNode = -1;
-    let word = "";
-    for (let nodeText of sentence) {
+    let pos = 0;
+    let id = 1;
+    let foundSeparator = false;
+    let tempSeparator = ""
+    graph = {0 : beginNode()};
+    while(pos<sentence.length) {
         //TODO : A paralléliser ou barre de chargement
-        word = await getWord(nodeText)
+        if([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
+            //TODO : Ajouter la totalité des séparateurs (par exemple " : ")
+            tempSeparator += sentence[pos];
+            pos++;
+            foundSeparator = true;
+            continue;
+        }
+        try {
+            word = await getWord(sentence[pos])
+        } catch (error) {
+            console.log(error.message);
+            console.log("Le mot est : " + sentence[pos] + "(" + sentence[pos].charCodeAt(0) + ")");
+        }
+
         //Creating a node from the word
-        graph[word.id] = {
+        graph[id] = {
             word: word.word,
+            id: word.id,
             link: {},
-            type: await getRpos(word)
+            type: await getRpos(word),
+            pos: pos,
+            separator: foundSeparator?tempSeparator:""
         }
         //Plugging it to the previous node
-        if (previousNode != -1) {
-            graph[previousNode]["link"][word.id] = "r_succ";
-        } else {
-            //Special case for _BEGIN node to easily recreate the whole sentence
-            graph[-2] = {
-                word: "_BEGIN",
-                link: {},
-                type: []
-            }
-            graph[-2]["link"][word.id] = "r_succ"
-        }
-        previousNode = word.id;
-    }
-    //Special case for _END node
-    graph[-3] = {
-        word: "_END",
-        link: {},
-        type: []
-    }
-    graph[previousNode]["link"][-3] = "r_succ"
+        graph[id-1]["link"][id] = "r_succ"
+        graph[id]["link"][id-1] = "r_succ<1"
 
-    return graph
+        pos += 1;
+        id += 1;
+        foundSeparator = false;
+        tempSeparator = "";
+    }
+    //Plugging the last node to the _END node
+    graph[id] = endNode(id);
+    graph[id-1]["link"][id] = "r_succ"
+    graph[id]["link"][id-1] = "r_succ<1"
+    graph[id]["separator"] = tempSeparator;
+    graph.length = id-1;
+
+    return graph;
 }
+
+
 
 /**
  * Exemple of sentence variable
  * @param sentence
  * $x r_succ $y&$x r_pos NOM&$y r_pos ADJ => $y r_caracc $x; another rules ...
  */
-
 function analyzeRules(sentence) {
     let conclusionRules = [];
     let allRules = [];
@@ -555,9 +581,23 @@ function interpretRules(allRules, conclusionRules, sentenceJSON) {
 let relations = JSON.parse(fs.readFileSync("./relations.json"));
 
 async function main() {
-    let sentenceJSON = makeGraph("Le petit chat boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat.");
-    let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; $x r_succ $y => $y r_caracc $x");
-    console.log(getWordType('Adj', await sentenceJSON));
+    let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
+    //console.log(splitSentence(sentence));
+    //console.log(splitSentence(sentence).join(''));
+    let sentenceJSON = await makeGraph(sentence);
+    //console.log(sentenceJSON)
+    // let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; $x r_succ $y => $y r_caracc $x");
+    // console.log(getWordType('Adj', await sentenceJSON));
+    let node = sentenceJSON[0];
+    let finalSentence = "";
+    while(node.word!="_END"){
+        finalSentence += node.separator + node.word;
+        //Find the key that has the r_succ value in word.type
+        let key = Object.keys(node.link).find(key => node.link[key] === "r_succ");
+        node = sentenceJSON[key];
+    }
+    console.log(finalSentence+node.separator+node.word);
+    await findComposedWords(sentenceJSON);
 }
 
 main().then(r => console.log("Done"));
