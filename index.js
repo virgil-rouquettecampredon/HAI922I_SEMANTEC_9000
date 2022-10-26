@@ -552,29 +552,68 @@ function getWordType(type, sentenceJSON) {
 
 }
 
+function getWordRelationWord(relation, sentenceJson){
+    let result = []
+    for (let node in sentenceJson) {
+        for (let link in sentenceJson[node].link) {
+            if (sentenceJson[node].link[link] == relation) {
+                result.push([sentenceJson[node].word, sentenceJson[link].word])
+            }
+        }
+    }
+    return result;
+}
+
 //function that create a link between two words
-function createLinkBetweenWords(word1, word2, relation, sentenceJSON) {
+ function createLinkBetweenWords(word1, word2, relation, sentenceJSON) {
     sentenceJSON.word1.link.word2 = relation;
+}
+
+//function that sort the condition of rules, for have in first the condition with the relation r_pos
+function sortRules(oneCondtionRules){
+    let result = []
+    for (let rule of oneCondtionRules){
+        if(rule[1] === "r_pos"){
+            //We put in first the condition with the relation r_pos
+            result.unshift(rule)
+        } else {
+            //We put in last the condition with the other relation
+            result.push(rule)
+        }
+    }
+    return result
 }
 
 //Function like interpret Rules in allRules, when one column is true, create in sentenceJson the relation in conclusionRules
 function interpretRules(allRules, conclusionRules, sentenceJSON) {
+    // for all rules into allRules
     for (let i = 0; i < allRules.length; i++) {
         let isTrue = true;
-        for (let j = 0; j < allRules[i].length; j++) {
-            let currentWord = sentenceJSON[-2]; //_BEGIN = id : -2
-            while(isTrue){
-                allRules[i].forEach((item, z) => {
-                    let dictionary = {};
-                    if(!(item[0] in dictionary)){
-                        dictionary[item[0]] = currentWord.word;
-                    }
-
-                });
-
+        // for all conditions into one rule
+        let arrayCondition = {};
+        let oneCondtionRules = sortRules(allRules[i]);
+        for (let j = 0; j < oneCondtionRules.length; j++) {
+            //we store in an array all words that satisfy the condition
+            if (oneCondtionRules[j][1] === "r_pos") {
+                arrayCondition[oneCondtionRules[j][0]] = getWordType(oneCondtionRules[j][2], sentenceJSON);
+            }
+            else{
+                let nameDict = oneCondtionRules[j][0] + oneCondtionRules[j][2];
+                arrayCondition[nameDict] = (getWordRelationWord(oneCondtionRules[j][1], sentenceJSON));
             }
         }
+        console.log(arrayCondition);
+        //we check the set of word where all conditions are true and we do the conclusion for him
+
+        let indexArray = [];
+
+        for (let k = 0; k < nameVariable.length; k++) {
+            indexArray.push(0);
+        }
+
+
     }
+    return sentenceJSON;
 }
 
 //Read relations.json
@@ -598,6 +637,12 @@ async function main() {
     }
     console.log(finalSentence+node.separator+node.word);
     await findComposedWords(sentenceJSON);
+    let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
+    console.log(rules);
+    console.log(sortRules(rules[0]));
+    //console.log(getWordType('Adj', sentenceJSON));
+    //interpretRules(rules, conclusion, sentenceJSON);
+    //console.log(getWordRelationWord('r_succ', await sentenceJSON));
 }
 
 main().then(r => console.log("Done"));
