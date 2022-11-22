@@ -12,7 +12,12 @@ const port = process.env.PORT || 3000;
 const cors = require("cors");
 
 //SEMANTEC9000
+//Loading the MWE json tree
+console.log("Loading MWE tree...");
+const start = process.hrtime();
 const MWE = JSON.parse(fs.readFileSync("MWE.json"))
+const end = process.hrtime(start);
+console.log('Loading tree time: %ds %dms', end[0], end[1] / 1000000);
 
 //Geometric mean
 function geometricMean(array) {
@@ -382,23 +387,28 @@ async function executeInference(sentence) {
 
 //Return an array of array with sentences and words/composedwords
 async function findComposedWords(graph) {
-  let posLocal = 0;
-  let posGlobal = 0;
-  while(posGlobal<graph.length) {
-    posLocal = posGlobal;
-    let currentWord = ""
-    let MWE_pos = MWE["_begin"];
-    while(graph[posLocal].word in MWE_pos && posLocal<=graph.length) {
-      MWE_pos = MWE_pos[graph[posLocal].word];
-      //TODO : Add separator back
-      currentWord += graph[posLocal].word + graph[posLocal].separator;
-      if("_d" in MWE_pos) {
-        console.log("Found word : " + currentWord);
-      }
-      posLocal+=1;
+    //Start precise timer
+    let start = process.hrtime();
+    let posLocal = 0;
+    let posGlobal = 0;
+    while(posGlobal<graph.length) {
+        posLocal = posGlobal;
+        let currentWord = ""
+        let MWE_pos = MWE["_begin"];
+        while(graph[posLocal].word in MWE_pos && posLocal<=graph.length) {
+            MWE_pos = MWE_pos[graph[posLocal].word];
+            //TODO : Add separator back
+            currentWord += graph[posLocal].word + graph[posLocal].separator;
+            if("_d" in MWE_pos) {
+                console.log("Found word : " + currentWord);
+            }
+            posLocal+=1;
+        }
+        posGlobal+=1;
     }
-    posGlobal+=1;
-  }
+    //End timer
+    let end = process.hrtime(start);
+    console.log("Time to find composed words : " + end[0] + "s " + end[1]/1000000 + "ms");
 }
 
 async function getRpos(node) {
@@ -565,7 +575,7 @@ function getWordRelationWord(relation, sentenceJson){
 }
 
 //function that create a link between two words
- function createLinkBetweenWords(word1, word2, relation, sentenceJSON) {
+function createLinkBetweenWords(word1, word2, relation, sentenceJSON) {
     sentenceJSON.word1.link.word2 = relation;
 }
 
