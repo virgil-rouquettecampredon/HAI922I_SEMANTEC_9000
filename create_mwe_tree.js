@@ -16,10 +16,12 @@ function splitSentence(sentence) {
 }
 
 async function main() {
+  //Begin Timer
+  const start = Date.now();
   const fileStream = fs.createReadStream('MWE.txt', {encoding : "latin1"});
   const rl = readline.createInterface({
-      input: fileStream,
-      crlfDelay: Infinity
+    input: fileStream,
+    crlfDelay: Infinity
   });
 
   let tree = {
@@ -51,6 +53,9 @@ async function main() {
     }
   }
   fs.writeFileSync(`MWE.json`, JSON.stringify(tree));
+  //End Timer
+  const end = Date.now();
+  console.log(`Execution time : ${end - start} ms`);
 }
 
 main()
