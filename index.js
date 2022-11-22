@@ -391,6 +391,7 @@ async function findComposedWords(graph) {
     let start = process.hrtime();
     let posLocal = 0;
     let posGlobal = 0;
+    let composedWords = [];
     while(posGlobal<graph.length) {
         posLocal = posGlobal;
         let currentWord = ""
@@ -400,7 +401,8 @@ async function findComposedWords(graph) {
             //TODO : Add separator back
             currentWord += graph[posLocal].word + graph[posLocal].separator;
             if("_d" in MWE_pos) {
-                console.log("Found word : " + currentWord);
+                console.log("Found composed word : " + currentWord);
+                composedWords.push({word: currentWord, pos: posGlobal, length: posLocal-posGlobal+1});
             }
             posLocal+=1;
         }
@@ -409,6 +411,7 @@ async function findComposedWords(graph) {
     //End timer
     let end = process.hrtime(start);
     console.log("Time to find composed words : " + end[0] + "s " + end[1]/1000000 + "ms");
+    return composedWords
 }
 
 async function getRpos(node) {
@@ -507,6 +510,29 @@ async function makeGraph(sentence) {
     graph[id]["link"][id-1] = "r_succ<1"
     graph[id]["separator"] = tempSeparator;
     graph.length = id-1;
+
+    //Add the composed words
+    let composedWords = await findComposedWords(graph);
+    for (let composedWord of composedWords) {
+        id+=1
+        //TODO : There is one space too many, have to check
+        console.log(composedWord);
+        word = await getWord(composedWord.word);
+        graph[id] = {
+            word: composedWord.word,
+            id: word.id,
+            link: {},
+            type: await getRpos(word),
+            pos: composedWord.pos,
+            separator: graph[composedWord.pos].separator
+        }
+        //Plugging it to the previous node
+        graph[composedWord.pos-1]["link"][id] = "r_succ"
+        graph[id]["link"][composedWord.pos-1] = "r_succ<1"
+        //Plugging it to the next node
+        graph[composedWord.pos+composedWord.length]["link"][id] = "r_succ"
+        graph[id]["link"][composedWord.pos+composedWord.length] = "r_succ<1"
+    }
 
     return graph;
 }
@@ -650,6 +676,7 @@ async function main() {
     let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
     console.log(rules);
     console.log(sortRules(rules[0]));
+    console.log(sentenceJSON);
     //console.log(getWordType('Adj', sentenceJSON));
     //interpretRules(rules, conclusion, sentenceJSON);
     //console.log(getWordRelationWord('r_succ', await sentenceJSON));
