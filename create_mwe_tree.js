@@ -32,7 +32,6 @@ async function main() {
   let wordSplitted = "";
   let currentNode = "";
 
-  //TODO : Keep the separator
   //TODO : Switch to regex function
   for await (const line of rl) {
     if(!line.startsWith("//") && (line!="") && (line!=" ")) {
@@ -41,12 +40,10 @@ async function main() {
       wordSplitted = splitSentence(lineSplitted[1].slice(1,-1))
       currentNode = tree["_begin"];
       for(let word of wordSplitted) {
-        if(![" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(word)) {
           if(!(word in currentNode)) {
             currentNode[word] = {}
           }
           currentNode = currentNode[word]
-        }
       }
       //TODO : Replace with shorter keyword for filesize
       currentNode["_d"] = 1;

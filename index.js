@@ -11,12 +11,22 @@ const bodyParser = require('body-parser')
 const port = process.env.PORT || 3000;
 const cors = require("cors");
 
+// Node type
+const WORD = 0;
+const COMPOSED_WORD = 1;
+const PUNCTUATION = 2;
+const BEGIN = -1;
+const END = -2;
+
+//Read relations.json
+const relations = JSON.parse(fs.readFileSync("./relations.json"));
+
 //SEMANTEC9000
 //Loading the MWE json tree
 console.log("Loading MWE tree...");
-const start = process.hrtime();
+let start = process.hrtime();
 const MWE = JSON.parse(fs.readFileSync("MWE.json"))
-const end = process.hrtime(start);
+let end = process.hrtime(start);
 console.log('Loading tree time: %ds %dms', end[0], end[1] / 1000000);
 
 //Geometric mean
@@ -60,6 +70,7 @@ function checkCacheExists() {
 async function getWord(word) {
     checkCacheExists();
     //Check if the word is in the cache
+    //TODO : Move cache check to program wide
     let cached = JSON.parse(fs.readFileSync("./cache/cached.json"));
     let cachedWord = cached.find(x => x.word === word);
 
@@ -398,10 +409,8 @@ async function findComposedWords(graph) {
         let MWE_pos = MWE["_begin"];
         while(graph[posLocal].word in MWE_pos && posLocal<=graph.length) {
             MWE_pos = MWE_pos[graph[posLocal].word];
-            //TODO : Add separator back
-            currentWord += graph[posLocal].word + graph[posLocal].separator;
+            currentWord += graph[posLocal].word;
             if("_d" in MWE_pos) {
-                console.log("Found composed word : " + currentWord);
                 composedWords.push({word: currentWord, pos: posGlobal, length: posLocal-posGlobal+1});
             }
             posLocal+=1;
@@ -441,97 +450,111 @@ function splitSentence(sentence) {
     return words;
 }
 
-function beginNode() {
-    return {
-        word: "_BEGIN",
-        link: {},
-        type: [],
-        pos: 0,
-        separator: ''
-    }
-}
-
-function endNode(pos) {
-    return {
-        word: "_END",
-        link: {},
-        type: [],
-        pos: pos,
-    }
-}
-
-async function makeGraph(sentence) {
-    //TODO : Change the index by the sentence position, not the index of the word, in case there are repeating words
-    sentence = splitSentence(sentence);
-    let graph = {}
-    //Keeping track of the previous node for r_succ
-    let pos = 0;
-    let id = 1;
-    let foundSeparator = false;
-    let tempSeparator = ""
-    graph = {0 : beginNode()};
-    while(pos<sentence.length) {
-        //TODO : A paralléliser ou barre de chargement
-        if([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
-            //TODO : Ajouter la totalité des séparateurs (par exemple " : ")
-            tempSeparator += sentence[pos];
-            pos++;
-            foundSeparator = true;
-            continue;
+class Node {
+    static createBeginNode() {
+        return {
+            word: "_BEGIN",
+            link: {},
+            type: [],
+            pos: 0,
+            separator: '',
+            nodeTpe : BEGIN
         }
-        try {
-            word = await getWord(sentence[pos])
-        } catch (error) {
-            console.log(error.message);
-            console.log("Le mot est : " + sentence[pos] + "(" + sentence[pos].charCodeAt(0) + ")");
-        }
+    }
 
-        //Creating a node from the word
-        graph[id] = {
+    static createEndNode(pos) {
+        return {
+            word: "_END",
+            link: {},
+            type: [],
+            pos: pos,
+            nodeType : END
+        }
+    }
+
+    static async createNodeWord(word, pos) {
+        word = await getWord(word);
+        let type = await getRpos(word);
+
+        return {
             word: word.word,
             id: word.id,
             link: {},
-            type: await getRpos(word),
+            type: type,
             pos: pos,
-            separator: foundSeparator?tempSeparator:""
+            nodeType : WORD
+        }
+    }
+
+    static async createNodeComposedWord(composedWord) {
+        let word = await getWord(composedWord.word);
+        let type = await getRpos(word);
+
+        return {
+            word: composedWord.word,
+            id: word.id,
+            link: {},
+            type: type,
+            pos: composedWord.pos,
+            length: composedWord.length,
+            nodeType : COMPOSED_WORD
+        }
+    }
+
+    static createNodePunctuation(punctuation, pos) {
+        return {
+            word: punctuation,
+            pos: pos,
+            link: {},
+            nodeType: PUNCTUATION
+        }
+    }
+}
+
+
+async function makeGraph(sentence) {
+    sentence = splitSentence(sentence);
+    let graph = {}
+    let pos = 0; //Position inside the sentence
+    let id = 1; //Position inside the graph
+
+    graph = {0 : Node.createBeginNode()};
+
+    while(pos<sentence.length) {
+        //TODO : A paralléliser ou barre de chargement
+        //Handling punctuation
+        if ([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
+            graph[id] = Node.createNodePunctuation(sentence[pos], id);
+        } else {
+            //Creating a node from the word
+            graph[id] = await Node.createNodeWord(sentence[pos], pos);
         }
         //Plugging it to the previous node
-        graph[id-1]["link"][id] = "r_succ"
-        graph[id]["link"][id-1] = "r_succ<1"
+        graph[id - 1]["link"]["r_succ"] = [{node: id, weight: 1}];
+        graph[id]["link"]["r_pred"] = [{node: id - 1, weight: 1}];
 
         pos += 1;
         id += 1;
-        foundSeparator = false;
-        tempSeparator = "";
     }
+
     //Plugging the last node to the _END node
-    graph[id] = endNode(id);
-    graph[id-1]["link"][id] = "r_succ"
-    graph[id]["link"][id-1] = "r_succ<1"
-    graph[id]["separator"] = tempSeparator;
+    graph[id] = Node.createEndNode(id);
+    graph[id - 1]["link"]["r_succ"] = [{node: id, weight: 1}];
+    graph[id]["link"]["r_pred"] = [{node: id - 1, weight: 1}];
     graph.length = id-1;
 
     //Add the composed words
     let composedWords = await findComposedWords(graph);
     for (let composedWord of composedWords) {
         id+=1
-        //TODO : There is one space too many, have to check
-        console.log(composedWord);
-        word = await getWord(composedWord.word);
-        graph[id] = {
-            word: composedWord.word,
-            id: word.id,
-            link: {},
-            type: await getRpos(word),
-            pos: composedWord.pos,
-            separator: graph[composedWord.pos].separator
-        }
+        graph[id] = await Node.createNodeComposedWord(composedWord);
+
         //Plugging it to the previous node
-        graph[composedWord.pos-1]["link"][id] = "r_succ"
-        graph[id]["link"][composedWord.pos-1] = "r_succ<1"
+        graph[composedWord.pos-1]["link"]["r_succ"].push({node: id, weight: 1});
+        graph[id]["link"]["r_pred"] = [{node: composedWord.pos-1, weight: 1}];
         //Plugging it to the next node
-        graph[composedWord.pos+composedWord.length]["link"][id] = "r_succ"
-        graph[id]["link"][composedWord.pos+composedWord.length] = "r_succ<1"
+        graph[composedWord.pos+composedWord.length]["link"]["r_pred"].push({node: id, weight: 1});
+        graph[id]["link"]["r_succ"] = [{node: composedWord.pos+composedWord.length, weight: 1}];
     }
 
     return graph;
@@ -600,11 +623,6 @@ function getWordRelationWord(relation, sentenceJson){
     return result;
 }
 
-//function that create a link between two words
-function createLinkBetweenWords(word1, word2, relation, sentenceJSON) {
-    sentenceJSON.word1.link.word2 = relation;
-}
-
 //function that sort the condition of rules, for have in first the condition with the relation r_pos
 function sortRules(oneCondtionRules){
     let result = []
@@ -618,6 +636,17 @@ function sortRules(oneCondtionRules){
         }
     }
     return result
+}
+
+function prettyPrintGraph(graph) {
+    let i = 0
+    let reconstructedSentence = ""
+    while(graph[i].nodeType!==END) {
+        //Find the node with the highest weight
+        i = graph[i].link.r_succ.reduce((a, b) => a.weight > b.weight ? a : b).node;
+        reconstructedSentence += graph[i].word;
+    }
+    console.log(reconstructedSentence);
 }
 
 //Function like interpret Rules in allRules, when one column is true, create in sentenceJson the relation in conclusionRules
@@ -652,31 +681,18 @@ function interpretRules(allRules, conclusionRules, sentenceJSON) {
     return sentenceJSON;
 }
 
-//Read relations.json
-let relations = JSON.parse(fs.readFileSync("./relations.json"));
-
 async function main() {
     let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
-    //console.log(splitSentence(sentence));
-    //console.log(splitSentence(sentence).join(''));
-    let sentenceJSON = await makeGraph(sentence);
-    //console.log(sentenceJSON)
+    let graph = await makeGraph(sentence);
+    prettyPrintGraph(graph);
+
     // let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; $x r_succ $y => $y r_caracc $x");
     // console.log(getWordType('Adj', await sentenceJSON));
-    let node = sentenceJSON[0];
-    let finalSentence = "";
-    while(node.word!="_END"){
-        finalSentence += node.separator + node.word;
-        //Find the key that has the r_succ value in word.type
-        let key = Object.keys(node.link).find(key => node.link[key] === "r_succ");
-        node = sentenceJSON[key];
-    }
-    console.log(finalSentence+node.separator+node.word);
-    await findComposedWords(sentenceJSON);
-    let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
-    console.log(rules);
-    console.log(sortRules(rules[0]));
-    console.log(sentenceJSON);
+
+    //let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
+    //console.log(rules);
+    //console.log(sortRules(rules[0]));
+    //console.log(sentenceJSON);
     //console.log(getWordType('Adj', sentenceJSON));
     //interpretRules(rules, conclusion, sentenceJSON);
     //console.log(getWordRelationWord('r_succ', await sentenceJSON));
@@ -685,7 +701,7 @@ async function main() {
 main().then(r => console.log("Done"));
 
 /**
- * Outgoing for relationship 4 to find kinf of word
+ * Outgoing for relationship 4 to find kind of word
  * Thread program to be scalable
  */
 
