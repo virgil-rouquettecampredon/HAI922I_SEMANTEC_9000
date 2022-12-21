@@ -500,7 +500,7 @@ class Node {
         }
     }
 
-    static createNodePunctuation(punctuation, pos) {
+    static async createNodePunctuation(punctuation, pos) {
         return {
             word: punctuation,
             pos: pos,
@@ -523,7 +523,7 @@ async function makeGraph(sentence) {
         //TODO : A paralléliser ou barre de chargement
         //Handling punctuation
         if ([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
-            graph[id] = Node.createNodePunctuation(sentence[pos], id);
+            graph[id] = await Node.createNodePunctuation(sentence[pos], pos);
         } else {
             //Creating a node from the word
             graph[id] = await Node.createNodeWord(sentence[pos], pos);

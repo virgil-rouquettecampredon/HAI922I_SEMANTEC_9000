@@ -1,0 +1,125 @@
+OUI OUI OUI Pensez à séparer tout les éléments (une virgule doit avoir son noeud)
+En général on prendra les cheminement spositifs pour le parcours du graphe
+Deux grands types de noeuds : Ancrés/situés->participe à un chemin de lecture
+pipe adieu dans les mots composés, les > , on peut garder les virgules pou rles noms d'oeuvre composés
+r_pos c'est la catégorie du mot (et attention au poids positif/négatif)
+de le ? de la ?
+rajouter noeuds spéciaux end et beginning (par exemple "begin" et "end"), ça sera plus simple pour reconstruire la phrase à l'affichage
+faire tout les graphes avec tout les r_pos possible (combinatoire) et paralléliser l'éxecution ou alors par priorité
+optimiser les règles en faisant des groupes avec les r_pos
+découper l'arbre préfixe en plusieurs petits fichiers avec des lettres de départ (plus efficace en accès ? explosion de la taille des fichiers ? au final plus de ram utilisée ?)
+pas la peine de prettify le json de l'arbre préfixe (réduit la taille)
+casse dans l'arbre ? compression ?
+un mot composé avec une majuscule est-il détecté ?
+parse les mots composés en multi coeur avec des Promise (tout les sous-ensembles/parties de la phrase), on teste sur sous ensemble 0-n, 1-n, 2-n...
+pattern matching in neo4j ? isomorphism ? Mauvaise idée, trop compliqué
+optimiser en comptant les variables par règles, en les ordonnant puis en fusionnant au fur et à mesure pour éviter de check trop de noeuds -> compiler
+refaire le splitter (pour garder les éléments splittant et les ajouter en attribut) puis un second modifieur (du --> de le)
+arc consistence : on garde uniquement $x $y et quand on passe sur une règle d'arité > 1 alors on mets à jour $x et $y (à voir s'il ne faut pas loop dessus)
+si jamais x n'est pas d'arité 0 il faudra penser à bien créer son array avec tout les noeuds
+
+Grande idée :
+On fait nos règles au fur et à mesure :
+On aura donc un tableau x, un tableau y, un tableau z
+Ensuite on arrive à la première règle d'arité 2 x y, on fait une sorte de produit cartésien sur les tuples valides x,y avec un nouveau tableau x,y
+Ensuite on a deux cas :
+	- Soit on a une variable déjà existante dans le tableau : On supprime des tuples
+	- Soit on a une nouvelle variable : On duplique les lignes avec la nouvelle variable valide
+Negativer les label incorrects sur les mots (au lieu de les éliminer) et ne pas oublier de négativer les r_succ entrants et sortants
+Negativer les relations inférées fausses
+Ne plus considérer si c'est négatif
+Paralléliser par paragraphes (pas par phrase, il est possible que des phrases soient dépendentes : Le chien est timbé dans le puit. Il a aboyé toute la nuit. --> Comment déterminer le "Il" ? Dans ce cas là, on va savoir que "Il" porte sur "aboyé" mais la ref sera soit sur puit, soit sur chien. Dans ce cas là il faudra inférer si un chien ou un puit peut aboyer.)
+Pas la peine de tester des phrases ambigues pour l'humain.
+"Marc a défoncé l'aile de la voiture de sa femme. Son aile est irréparable./ Sa colère est inextinguible. Sa peinture est rayée./" Trouver qui est le possesseur de l'adjectif possessif "sa".
+"Si on a un adjectif ou un adverbe, bypass ?" --> "Cet étudiant mange vraiment beaucoup" et on suppose que dans les mots composés on a "manger beaucoup" donc on ignore l'adverbe "vraiment". On pourrait donc avoir les règles $x r_pos Adv & $y r_succ $x & $x r_succ $z => $y r_succ $z
+Relations sémantiques intéressantes (et leurs inverses) : r_agent, r_patient, 
+La règle du siècle (r_head est a créer, relation grammaticale) : $x r_agent $y & $y r_head $z => $x r_agent $z ("le chien de ma voisine folle a pissé sur ma voiture" ici on a le GN : "le chien de ma voisine folle" et "le chien" qui est r_head du GN.) DONC QUAND ON CREE UN GN IL FAUT TOUJOURS AVOIR r_head.
+Attention aux phrases passive (il faut bien avoir r_agent et r_sujet : Marc vole mon vélo / Mon vélo a été volé par Marc)
+$x == 'GN' & $x r_succ $y & $y == 'de' & $y r_succ $z & $z == 'GN_DET' ==> 'GN'
+Il faut garder "du" et faire un chemin alternatif "de le"
+Faire un compilateur de règles (on peut même compiler directement des fonctions)
+Graph matching ?
+Lemme
+Noyau verbale (participe passé compte comme un noyau : "a mangé")
+Penser a faire peut-être une relation *r_relation pour négativer la relation en conclusion
+Comment faire une inférence dans les règles (comment l'écrire ?) on peut par exemple faire r_carac pour le graphe et k_carac pour jeuxdemots (knowledge)
+Ne pas recompiler la grammaire à chaque fois, on utilise le timestamp
+Simplifier les règles (transitivité, ordonnancement)
+
+- Essayer d'énumérer les antécédents pour les relier correctement
+- Sélectionner ceux qui vérifient les relations sémantiques (idéalement un seul)
+Ex : Le chat est tombé dans le puit. Il a aboyé toute la nuit.
+il <- aboyé : qui est il ? chien ? puit ?
+on teste inférence :
+- un puit peut aboyer ? non
+- un chien peut aboyer ? oui
+
+
+--> Cas compliqué, pas nécessaire au projet
+Résolution anaphorique :
+Le chien a aboyé toute la nuit -> On sait facilement que c'est le chien, mais en cas d'ambiguité, il faut pouvoir le résoudre au mieux.
+On va utiliser la sémantique ici, mais ça ne fonctionne pas tjrs.
+Exemple : Le poisson a mangé un asticot. Il était très bon / Il était affamé.
+=> Poisson = très bon / Poisson = affamé
+Ici la stratégie de base c'est d'extraire els relations sémantique spar rrapport au pronom. On va l'attache rà tout ce qui est préfcédent et qui s'accorde en genre et en nombre (les antécédents). S'il y en a plusieurs, on va chercher dans notre base de connaissance quelles sont les relations qui s'appliquent par rapport à chacun des antécédents. Dans des cas moins favorables, soit il n'y a aucun antécédent, soit tous sont faux, ou équivalent. Si on a aucune autre info, on prends généralement le premier antécédent.
+					
+								OU
+								
+Théorie du rôle :
+r_isa rôle aliment pour asticot (via manger)
+
+Le bouc a mangé le livre. Il était délicieux. (là c'est bien le livre qui prends le rôle de délicieux même si ça n'est généralement pas le cas)
+
+Différence entre : L'étudiant a dévoré le livre. / La chèvre a dévoré le livre.
+
+Je veux que mon ordinateur réfléchisse comme un enfant.
+
+Utiliser GPT-3 pour comprendre des phrases ?
+
+Changer le MWE Tree par des ID
+
+On arrête quand le graphe n'est plus modifié (par la conclusion)
+
+Regarder les modèles de Markov caché.
+
+Penser à faire un README avec comment déployer le serveur également (sous l'OS de notre choix).
+
+Faire les lemmes de la phrase via jeux de mots pour tester la phrase sous sa forme lemmatique
+
+Penser à boucler sur les mots-composés (on optimise l'algo au max)
+
+Désambiguiser les termes à bas coût : "Le chat boit du lait" quand on sait qu'on a chat lié à boit, on infère les raffinements de chat pour savoir s'il peut boire
+
+"Il regarde la fille avec un téléscope" -> On veut extraire à la fin la relation "regarder r_instrument téléscope"
+
+Mots inconnus : "Le TagadaSchtroumpf mange une souris". Avec le contexte on doit pouvoir dire ce qu'est TagadaSchtroumpf (nom, masculin, etc...)
+
+Pas besoin de dessiner le graphe
+
+Graphe ultra simple sur un array 2D : hauteur = branchements max / largeur = longueur phrase -> Pour l'instant ne représente pas nécessairement les relations
+
+Utiliser un ordinateur quantique ?
+
+Ne pas oublier qu'on peut voir le GDoc du prof pour tester avec des phrases. On peut par exemple tester le texte complet de 20 000 lieux sous les mers pour bench.
+
+TESTER SUR LES PHRASES DU GDOC POUR BASELINE
+
+la frégate a volé un poisson au pêcheur / la frégate a volé un poisson pour le pêcheur  (cas compliqué) / voir les provider dans jdm
+
+On peut utiliser Rezo Ask mais vaut mieux éviter quand même, autant réutiliser notre code
+
+"le missile fonce sur le croiseur et le coule." -> Si on arrive à trouver le fait qu'un missile peut faire couler un croiseur c'est très très bien.
+
+Quand on a la préposition "de" ou "à" on essaye de déterminer la relation (la queue du chat, le vendeur du monoprix, r_lieu, r_partie ?)
+
+trouver une phrase qui compose tout les pires exemples
+
+"on mange, les enfants"
+
+Durant la démo :
+- D'abord on montre le résultat final (que les relations/noeuds qu'on retient)
+- Ensuite on peut accéder au graphe de calcul final (avec tout ce qu'on a pu trouver pendant le calcul)
+
+Ce qu'il va tester :
+- Vérifier les mots-composés ("lait de chèvre" ou "boire du lait" s'il apparaît dans jeux de mots sous sa forme lemmatique)
+- Des variantes des phrases données
