@@ -1,10 +1,14 @@
 const fs = require("fs");
 const readline = require("readline")
+
 //HTTP requests
 const axios = require("axios");
+
 //Converting Windows-1252 to UTF-8
 const iconv = require('iconv-lite');
 const express = require("express");
+
+// Web server
 const path = require("path");
 const app = express();
 const bodyParser = require('body-parser')
@@ -29,29 +33,29 @@ checkCacheExists();
 let cached = JSON.parse(fs.readFileSync("./cache/cached.json"));
 
 
-//SEMANTEC9000
-//Loading the MWE json tree
 console.log("Loading MWE tree...");
 let start = process.hrtime();
 const MWE = JSON.parse(fs.readFileSync("MWE.json"))
 let end = process.hrtime(start);
 console.log('Loading tree time: %ds %dms', end[0], end[1] / 1000000);
 
-//Geometric mean
-function geometricMean(array) {
-    return Math.pow(array.reduce((a, b) => parseInt(a) * parseInt(b)), 1 / array.length);
-}
+/**********************************************************************************************************************/
+/*                                                  Other functions                                                   */
+/**********************************************************************************************************************/
 
-//Root mean square
-function rootMeanSquare(array) {
-    return Math.sqrt(array.reduce((a, b) => parseInt(a) + parseInt(b) * parseInt(b)) / array.length);
-}
+function geometricMean(array) { return Math.pow(array.reduce((a, b) => parseInt(a) * parseInt(b)), 1 / array.length); }
 
-//Mean
-function mean(array) {
-    return array.reduce((a, b) => parseInt(a) + parseInt(b)) / array.length;
-}
+function rootMeanSquare(array) { return Math.sqrt(array.reduce((a, b) => parseInt(a) + parseInt(b) * parseInt(b)) / array.length); }
 
+function mean(array) { return array.reduce((a, b) => parseInt(a) + parseInt(b)) / array.length; }
+
+
+
+
+
+/**********************************************************************************************************************/
+/*                                                Handling words                                                      */
+/**********************************************************************************************************************/
 /**
  * Check if cache exists, and if not create one
  */
@@ -87,7 +91,7 @@ async function getWord(word) {
             throw new Error(word + " est trop gros pour être traité par le site");
         }
     } else {
-        console.log(word + " not in cache, fetching from RezoDump");
+        console.log("'" + word + "' not in cache, fetching from RezoDump");
         return await getWordFromRezoDump(word);
     }
 }
@@ -110,6 +114,7 @@ async function getWordFromHTML(html, id) {
 
     //Set the state to PROCESSED
     cachedWord.state = "PROCESSED";
+    // TODO : Might not be correctly written because of async
     fs.writeFileSync("./cache/cached.json", JSON.stringify(cached, null, 4));
 
     return jsonData;
@@ -266,6 +271,14 @@ async function readLineByLine(wordId, wordString) {
     return word;
 }
 
+
+
+
+
+/**********************************************************************************************************************/
+/*                                                  Inferences                                                        */
+/**********************************************************************************************************************/
+
 async function findLinkBetweenWords(w1, r, w2) {
 
     let relationId = relations[r];
@@ -395,58 +408,172 @@ async function executeInference(sentence) {
     }
 }
 
-//Return an array of array with sentences and words/composedwords
-async function findComposedWords(graph) {
-    //Start precise timer
-    let start = process.hrtime();
-    let posLocal = 0;
-    let posGlobal = 0;
-    let composedWords = [];
-    while(posGlobal<graph.length) {
-        posLocal = posGlobal;
-        let currentWord = ""
-        let MWE_pos = MWE["_begin"];
-        while(graph[posLocal].word in MWE_pos && posLocal<=graph.length) {
-            MWE_pos = MWE_pos[graph[posLocal].word];
-            currentWord += graph[posLocal].word;
-            if("_d" in MWE_pos) {
-                composedWords.push({word: currentWord, pos: posGlobal, length: posLocal-posGlobal+1});
-            }
-            posLocal+=1;
-        }
-        posGlobal+=1;
-    }
-    //End timer
-    let end = process.hrtime(start);
-    console.log("Time to find composed words : " + end[0] + "s " + end[1]/1000000 + "ms");
-    return composedWords
-}
 
-async function getRpos(node) {
-    let result = []
-    for (let r of node.outgoingRelationship) {
-        if (r.type == 4) {
-            if (r.weight > 0) {
-                result.push({"r_pos": node.nodeTerms[r.node].name, "weight": r.weight});
-            } else {
-                result.push({"r_pos<0": node.nodeTerms[r.node].name, "weight": r.weight});
+
+
+
+class Graph {
+    graph = {};
+    id = 1; //Used to generate unique ids for nodes, position inside the graph
+    constructor(sentence) {
+        return (async () => {
+            //Start precise timer
+            let start = process.hrtime();
+            sentence = Graph.splitSentence(sentence);
+            let pos = 0; //Position inside the sentence
+
+            this.graph = {0: Node.createBeginNode()};
+
+            let wordPromises = [];
+
+            while (pos < sentence.length) {
+                //Handling punctuation
+                if ([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
+                    wordPromises.push(Node.createNodePunctuation(this.id, sentence[pos], pos));
+                } else {
+                    //Creating a node from the word
+                    wordPromises.push(Node.createNodeWord(this.id, sentence[pos], pos));
+                }
+                pos += 1;
+                this.id += 1;
+            }
+
+
+            //Parallelize the creation of the nodes
+            await Promise.all(wordPromises).then((values) => {
+                for (let value of values) {
+                    this.graph[value[0]] = value[1];
+                }
+                for (let value of values) {
+                    this.id = value[0];
+                    //Plugging it to the previous node
+                    this.graph[this.id - 1]["link"]["r_succ"] = [{node: this.id, weight: 1}];
+                    this.graph[this.id]["link"]["r_pred"] = [{node: this.id - 1, weight: 1}];
+                }
+            });
+
+            //Plugging the last node to the _END node
+            this.id += 1;
+            this.graph[this.id] = Node.createEndNode(this.id);
+            this.graph[this.id - 1]["link"]["r_succ"] = [{node: this.id, weight: 1}];
+            this.graph[this.id]["link"]["r_pred"] = [{node: this.id - 1, weight: 1}];
+            this.graph.sentenceLength = this.id - 1;
+
+            await this.addComposedWordsToGraph();
+
+            //End timer
+            let end = process.hrtime(start);
+            console.log("Time to make the graph : " + end[0] + "s " + end[1] / 1000000 + "ms");
+
+            return this;
+        })();
+    }
+
+    async addComposedWordsToGraph() {
+        //Start precise timer
+        let start = process.hrtime();
+        //Add the composed words
+        let composedWords = await this.findComposedWords();
+        let promises = [];
+        this.id += 1;
+        for (let composedWord of composedWords) {
+            promises.push(Node.createNodeComposedWord(this.id, composedWord));
+            this.id += 1;
+        }
+
+        await Promise.all(promises).then((values) => {
+            for (let value of values) {
+                this.graph[value[0]] = value[1];
+            }
+            for (let value of values) {
+                this.id = value[0];
+                let composedWord = value[1];
+                //Plugging it to the previous node
+                this.graph[composedWord.pos-1]["link"]["r_succ"].push({node: this.id, weight: 1});
+                this.graph[this.id]["link"]["r_pred"] = [{node: composedWord.pos-1, weight: 1}];
+                //Plugging it to the next node
+                this.graph[composedWord.pos+composedWord.length]["link"]["r_pred"].push({node: this.id, weight: 1});
+                this.graph[this.id]["link"]["r_succ"] = [{node: composedWord.pos+composedWord.length, weight: 1}];
+            }
+        });
+
+        //End timer
+        let end = process.hrtime(start);
+        console.log("Time to add composed words to the graph : " + end[0] + "s " + end[1]/1000000 + "ms");
+    }
+
+    //Return an array of array with sentences and words/composedwords
+    async findComposedWords() {
+        let posLocal = 0;
+        let posGlobal = 0;
+        let composedWords = [];
+        while(posGlobal<this.graph.sentenceLength) {
+            posLocal = posGlobal;
+            let currentWord = ""
+            let MWE_pos = MWE["_begin"];
+            while(this.graph[posLocal].word in MWE_pos && posLocal<=this.graph.sentenceLength) {
+                MWE_pos = MWE_pos[this.graph[posLocal].word];
+                currentWord += this.graph[posLocal].word;
+                if("_d" in MWE_pos) {
+                    composedWords.push({word: currentWord, pos: posGlobal, length: posLocal-posGlobal+1});
+                }
+                posLocal+=1;
+            }
+            posGlobal+=1;
+        }
+        return composedWords
+    }
+
+    //Split a string into multiple words, while keeping the splitters
+    static splitSentence(sentence) {
+        //TODO : Check whether JeuxDeMots uses a mix of both … and ... or not
+        //Replace ... with …
+        sentence = sentence.replace(/\.\.\./g, "…");
+        //Split the sentence using the following separators : . , ; : ! ? ( ) " « » … c' d' j' l' m' n' s' t' y' qu'
+        //TODO : Use positive match instead of negative to avoid having to remove the empty strings
+        let words = sentence.split(/([ .,;:!?()«»…"]|[cdjlmnstyCDJLMNSTY]'|qu')/);
+        //Remove empty strings
+        words = words.filter(word => word !== "");
+        return words;
+    }
+
+    //returns all word of kind type
+    getWordType(type) {
+        let result = []
+        for (let node in this.graph) {
+            for (let r_pos of this.graph[node].type) {
+                if ('r_pos' in r_pos) {
+                    if (r_pos.r_pos.startsWith(type)) {
+                        result.push(this.graph[node].word)
+                    }
+                }
             }
         }
+        return result;
     }
-    return result
-}
 
-//Split a string into multiple words, while keeping the splitters
-function splitSentence(sentence) {
-    //TODO : Check whether JeuxDeMots uses a mix of both … and ... or not
-    //Replace ... with …
-    sentence = sentence.replace(/\.\.\./g, "…");
-    //Split the sentence using the following separators : . , ; : ! ? ( ) " « » … c' d' j' l' m' n' s' t' y' qu'
-    //TODO : Use positive match instead of negative to avoid having to remove the empty strings
-    let words = sentence.split(/([ .,;:!?()«»…"]|[cdjlmnstyCDJLMNSTY]'|qu')/);
-    //Remove empty strings
-    words = words.filter(word => word !== "");
-    return words;
+    getWordRelationWord(relation){
+        let result = []
+        for (let node in this.graph) {
+            for (let link in this.graph[node].link) {
+                if (this.graph[node].link[link] == relation) {
+                    result.push([this.graph[node].word, this.graph[link].word])
+                }
+            }
+        }
+        return result;
+    }
+
+    toString() {
+        let i = 0
+        let reconstructedSentence = this.graph[0].word + " | ";
+        while(this.graph[i].nodeType!==END) {
+            //Find the node with the highest weight
+            i = this.graph[i].link.r_succ.reduce((a, b) => a.weight > b.weight ? a : b).node;
+            reconstructedSentence += this.graph[i].word + " | ";
+        }
+        return reconstructedSentence;
+    }
 }
 
 class Node {
@@ -471,25 +598,25 @@ class Node {
         }
     }
 
-    static async createNodeWord(word, pos) {
+    static async createNodeWord(id, word, pos) {
         word = await getWord(word);
-        let type = await getRpos(word);
+        let type = await Node.getRpos(word);
 
-        return {
+        return [id, {
             word: word.word,
             id: word.id,
             link: {},
             type: type,
             pos: pos,
             nodeType : WORD
-        }
+        }]
     }
 
-    static async createNodeComposedWord(composedWord) {
+    static async createNodeComposedWord(id, composedWord) {
         let word = await getWord(composedWord.word);
-        let type = await getRpos(word);
+        let type = await Node.getRpos(word);
 
-        return {
+        return [id, {
             word: composedWord.word,
             id: word.id,
             link: {},
@@ -497,66 +624,31 @@ class Node {
             pos: composedWord.pos,
             length: composedWord.length,
             nodeType : COMPOSED_WORD
-        }
+        }]
     }
 
-    static async createNodePunctuation(punctuation, pos) {
-        return {
+    static async createNodePunctuation(id, punctuation, pos) {
+        return [id, {
             word: punctuation,
             pos: pos,
             link: {},
             nodeType: PUNCTUATION
+        }]
+    }
+
+    static async getRpos(node) {
+        let result = []
+        for (let r of node.outgoingRelationship) {
+            if (r.type == 4) {
+                if (r.weight > 0) {
+                    result.push({"r_pos": node.nodeTerms[r.node].name, "weight": r.weight});
+                } else {
+                    result.push({"r_pos<0": node.nodeTerms[r.node].name, "weight": r.weight});
+                }
+            }
         }
+        return result
     }
-}
-
-
-async function makeGraph(sentence) {
-    sentence = splitSentence(sentence);
-    let graph = {}
-    let pos = 0; //Position inside the sentence
-    let id = 1; //Position inside the graph
-
-    graph = {0 : Node.createBeginNode()};
-
-    while(pos<sentence.length) {
-        //TODO : A paralléliser ou barre de chargement
-        //Handling punctuation
-        if ([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
-            graph[id] = await Node.createNodePunctuation(sentence[pos], pos);
-        } else {
-            //Creating a node from the word
-            graph[id] = await Node.createNodeWord(sentence[pos], pos);
-        }
-        //Plugging it to the previous node
-        graph[id - 1]["link"]["r_succ"] = [{node: id, weight: 1}];
-        graph[id]["link"]["r_pred"] = [{node: id - 1, weight: 1}];
-
-        pos += 1;
-        id += 1;
-    }
-
-    //Plugging the last node to the _END node
-    graph[id] = Node.createEndNode(id);
-    graph[id - 1]["link"]["r_succ"] = [{node: id, weight: 1}];
-    graph[id]["link"]["r_pred"] = [{node: id - 1, weight: 1}];
-    graph.length = id-1;
-
-    //Add the composed words
-    let composedWords = await findComposedWords(graph);
-    for (let composedWord of composedWords) {
-        id+=1
-        graph[id] = await Node.createNodeComposedWord(composedWord);
-
-        //Plugging it to the previous node
-        graph[composedWord.pos-1]["link"]["r_succ"].push({node: id, weight: 1});
-        graph[id]["link"]["r_pred"] = [{node: composedWord.pos-1, weight: 1}];
-        //Plugging it to the next node
-        graph[composedWord.pos+composedWord.length]["link"]["r_pred"].push({node: id, weight: 1});
-        graph[id]["link"]["r_succ"] = [{node: composedWord.pos+composedWord.length, weight: 1}];
-    }
-
-    return graph;
 }
 
 
@@ -594,34 +686,6 @@ function analyzeRules(sentence) {
     return [allRules, conclusionRules];
 }
 
-//returns all word of kind type
-function getWordType(type, sentenceJSON) {
-    let result = []
-    for (let node in sentenceJSON) {
-        for (let r_pos of sentenceJSON[node].type) {
-            if ('r_pos' in r_pos) {
-                if (r_pos.r_pos.startsWith(type)) {
-                    result.push(sentenceJSON[node].word)
-                }
-            }
-        }
-    }
-    return result;
-
-}
-
-function getWordRelationWord(relation, sentenceJson){
-    let result = []
-    for (let node in sentenceJson) {
-        for (let link in sentenceJson[node].link) {
-            if (sentenceJson[node].link[link] == relation) {
-                result.push([sentenceJson[node].word, sentenceJson[link].word])
-            }
-        }
-    }
-    return result;
-}
-
 //function that sort the condition of rules, for have in first the condition with the relation r_pos
 function sortRules(oneCondtionRules){
     let result = []
@@ -635,17 +699,6 @@ function sortRules(oneCondtionRules){
         }
     }
     return result
-}
-
-function prettyPrintGraph(graph) {
-    let i = 0
-    let reconstructedSentence = ""
-    while(graph[i].nodeType!==END) {
-        //Find the node with the highest weight
-        i = graph[i].link.r_succ.reduce((a, b) => a.weight > b.weight ? a : b).node;
-        reconstructedSentence += graph[i].word;
-    }
-    console.log(reconstructedSentence);
 }
 
 //Function like interpret Rules in allRules, when one column is true, create in sentenceJson the relation in conclusionRules
@@ -682,8 +735,8 @@ function interpretRules(allRules, conclusionRules, sentenceJSON) {
 
 async function main() {
     let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
-    let graph = await makeGraph(sentence);
-    prettyPrintGraph(graph);
+    let graph = await new Graph(sentence);
+    console.log(graph);
 
     // let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; $x r_succ $y => $y r_caracc $x");
     // console.log(getWordType('Adj', await sentenceJSON));
