@@ -21,6 +21,14 @@ const END = -2;
 //Read relations.json
 const relations = JSON.parse(fs.readFileSync("./relations.json"));
 
+//Create application/json parser
+let jsonParser = bodyParser.json()
+
+//Load cache
+checkCacheExists();
+let cached = JSON.parse(fs.readFileSync("./cache/cached.json"));
+
+
 //SEMANTEC9000
 //Loading the MWE json tree
 console.log("Loading MWE tree...");
@@ -44,9 +52,6 @@ function mean(array) {
     return array.reduce((a, b) => parseInt(a) + parseInt(b)) / array.length;
 }
 
-// create application/json parser
-var jsonParser = bodyParser.json()
-
 /**
  * Check if cache exists, and if not create one
  */
@@ -68,10 +73,7 @@ function checkCacheExists() {
  * @returns {JSON} : data for the word
  */
 async function getWord(word) {
-    checkCacheExists();
     //Check if the word is in the cache
-    //TODO : Move cache check to program wide
-    let cached = JSON.parse(fs.readFileSync("./cache/cached.json"));
     let cachedWord = cached.find(x => x.word === word);
 
     if (cachedWord) {
@@ -100,7 +102,6 @@ function getWordFromCache(id) {
 }
 
 async function getWordFromHTML(html, id) {
-    let cached = JSON.parse(fs.readFileSync("./cache/cached.json"));
     let cachedWord = cached.find(x => x.id === id);
 
     //Save decodedFile
@@ -120,8 +121,6 @@ async function getWordFromHTML(html, id) {
  * @returns {JSON} : data for the word
  */
 async function getWordFromRezoDump(word) {
-    let cached = JSON.parse(fs.readFileSync("./cache/cached.json"));
-
     //Get the definition from the API with axios in windows-1252
     //Be careful with the URL encoding
     let response = await axios.get(`http://www.jeuxdemots.org/rezo-dump.php?gotermsubmit=Chercher&gotermrel=${word}&rel=`, {
