@@ -457,7 +457,7 @@ class Graph {
             this.graph[this.id] = Node.createEndNode(this.id);
             this.graph[this.id - 1]["link"]["r_succ"] = [{node: this.id, weight: 1}];
             this.graph[this.id]["link"]["r_pred"] = [{node: this.id - 1, weight: 1}];
-            this.graph.sentenceLength = this.id - 1;
+            this.sentenceLength = this.id - 1;
 
             await this.addComposedWordsToGraph();
 
@@ -507,11 +507,11 @@ class Graph {
         let posLocal = 0;
         let posGlobal = 0;
         let composedWords = [];
-        while(posGlobal<this.graph.sentenceLength) {
+        while(posGlobal<this.sentenceLength) {
             posLocal = posGlobal;
             let currentWord = ""
             let MWE_pos = MWE["_begin"];
-            while(this.graph[posLocal].word in MWE_pos && posLocal<=this.graph.sentenceLength) {
+            while(this.graph[posLocal].word in MWE_pos && posLocal<=this.sentenceLength) {
                 MWE_pos = MWE_pos[this.graph[posLocal].word];
                 currentWord += this.graph[posLocal].word;
                 if("_d" in MWE_pos) {
@@ -538,13 +538,17 @@ class Graph {
     }
 
     //returns all word of kind type
-    getWordType(type) {
+    getWordType(type, nodeList) {
         let result = []
-        for (let node in this.graph) {
-            for (let r_pos of this.graph[node].type) {
-                if ('r_pos' in r_pos) {
-                    if (r_pos.r_pos.startsWith(type)) {
-                        result.push(this.graph[node].word)
+        for (let node in nodeList) {
+            if (this.graph[node].nodeType === WORD || this.graph[node].nodeType === COMPOSED_WORD) {
+                for (let r_pos of this.graph[node].type) {
+                    if ('r_pos' in r_pos) {
+                        //TODO : Check if r_pos<0 is not more possible
+                        if (r_pos.r_pos.startsWith(type)) {
+                            //TODO : What do we do with the refinements
+                            result.push(node)
+                        }
                     }
                 }
             }
@@ -552,12 +556,14 @@ class Graph {
         return result;
     }
 
-    getWordRelationWord(relation){
+    getWordRelationWord(relation, nodeList1, nodeList2) {
         let result = []
-        for (let node in this.graph) {
-            for (let link in this.graph[node].link) {
-                if (this.graph[node].link[link] == relation) {
-                    result.push([this.graph[node].word, this.graph[link].word])
+        for (let node of nodeList1) {
+            if (relation in this.graph[node].link) {
+                for (let nodeFound of this.graph[node].link[relation]) {
+                    if (nodeFound.node in nodeList2) {
+                        result.push([node, nodeFound.node])
+                    }
                 }
             }
         }
@@ -574,6 +580,154 @@ class Graph {
         }
         return reconstructedSentence;
     }
+
+    async analyze(rules) {
+        //TODO : Adds all links, even if there are duplicates found (in case of raffinement of nodes, need to make a choice)
+        let hasChanged = true;
+        while (hasChanged) {
+            hasChanged = false;
+            for (let rule of rules.rules) {
+                let currentTuples = {};
+                for(let variable of rule.allVariables) {
+                    if (!(variable in currentTuples)) {
+                        currentTuples[variable] = Object.keys(this.graph);
+                    }
+                }
+                for (let premise of rule.premises) {
+                    // For rules of arity 1
+                    if (premise.nbVariables === 1) {
+                        // For r_pos rules only
+                        if (premise.parts[1] === "r_pos") {
+                            currentTuples[premise.variables[0]] = this.getWordType(premise.parts[2], currentTuples[premise.variables[0]]);
+                        } else {
+                            console.log(premise);
+                            throw new Error("Only r_pos rules are supported for now");
+                        }
+                    // For rules of arity 2 or more
+                    } else {
+                        // For each pair of variables
+                        for (let i = 0; i < premise.nbVariables - 1; i++) {
+                            let var1 = premise.variables[i];
+                            let var2 = premise.variables[i+1];
+                            let relation = premise.parts[i+1];
+                            if(var1 in currentTuples && var2 in currentTuples) {
+                                //console.log(var1 + " " + var2 + " exists");
+                                currentTuples[var1 + var2] = this.getWordRelationWord(relation, currentTuples[var1], currentTuples[var2]);
+                                // Remove the old tuples
+                                delete currentTuples[var1];
+                                delete currentTuples[var2];
+                            } else if (!(var1 in currentTuples) && (var2 in currentTuples)) {
+                                //console.log(var1 + " " + var2 + " var1 doesn't exist");
+                                // If var1 is not in the current tuples, it means that it already exists as a merged tuples, so we need to find it
+                                //Find the key that contains var1
+                                let key = Object.keys(currentTuples).find(key => key.includes(var1));
+                                //Get its position in the key
+                                let pos = key.indexOf(var1)/2;
+                                // Create an array that only contains the pos value of currentTuples[key]
+                                let currentTuplesPos = currentTuples[key].map(tuple => tuple[pos]);
+                                let result = this.getWordRelationWord(relation, currentTuplesPos, currentTuples[var2]);
+                                //For each key of currentTuple[key], if currentTuple[key][i][pos] is in result[i][0], then we add it to currentTuples[var1+var2]
+                                currentTuples[key + var2] = [];
+                                for(let tuple of currentTuples[key]) {
+                                    for(let tupleResult of result) {
+                                        if(tuple[pos] == tupleResult[0]) {
+                                            let tempTuple = JSON.parse(JSON.stringify(tuple));
+                                            tempTuple.splice(pos+1, 0, tupleResult[1])
+                                            currentTuples[key + var2].push(tempTuple);
+                                        }
+                                    }
+                                }
+                                // Remove the old tuples
+                                delete currentTuples[key];
+                                delete currentTuples[var2];
+                            } else if ((var1 in currentTuples) && !(var2 in currentTuples)) {
+                                // If var2 is not in the current tuples, it means that it already exists as a merged tuples, so we need to find it
+                                //Find the key that contains var2
+                                let key = Object.keys(currentTuples).find(key => key.includes(var2));
+                                //Get its position in the key
+                                let pos = key.indexOf(var2)/2;
+                                // Create an array that only contains the pos value of currentTuples[key]
+                                let currentTuplesPos = currentTuples[key].map(tuple => tuple[pos]);
+                                let result = this.getWordRelationWord(relation, currentTuples[var1], currentTuplesPos);
+                                //For each key of currentTuple[key], if currentTuple[key][i][pos] is in result[i][0], then we add it to currentTuples[var1+var2]
+                                currentTuples[var1 + key] = [];
+                                for(let tuple of currentTuples[key]) {
+                                    for(let tupleResult of result) {
+                                        if(tuple[pos] == tupleResult[1]) {
+                                            let tempTuple = JSON.parse(JSON.stringify(tuple));
+                                            tempTuple.splice(pos+1, 0, tupleResult[0])
+                                            currentTuples[var1 + key].push(tempTuple);
+                                        }
+                                    }
+                                }
+                                // Remove the old tuples
+                                delete currentTuples[key];
+                                delete currentTuples[var2];
+                            } else {
+                                //TODO : Check if it does work
+                                //console.log(var1 + " " + var2 + " doesn't exist");
+                                // If both var1 and var2 are not in the current tuples, it means that they already exists as a merged tuples, so we simply need to filter the tuples that don't have our relation
+                                //Find the key that contains var1
+                                let key1 = Object.keys(currentTuples).find(key => key.includes(var1));
+                                //Get its position in the key
+                                let pos1 = key1.indexOf(var1)/2;
+                                //Find the key that contains var2
+                                let key2 = Object.keys(currentTuples).find(key => key.includes(var2));
+                                //Get its position in the key
+                                let pos2 = key2.indexOf(var2)/2;
+                                if(key1 !== key2) {
+                                    console.log(key1, key2);
+                                    throw new Error("The two variables are not in the same tuple");
+                                }
+                                currentTuples.filter(tuple => {
+                                    return this.graph[tuple[pos1]].link[relation].find(link => link.node === tuple[pos2]) !== undefined;
+                                });
+                            }
+                        }
+
+
+                    }
+                }
+                //First we figure out which variable is in the conclusion and at which position
+                let conclusionVariables = [];
+                //TODO : Can only handle one conclusion for now
+                for (let variable of rule.conclusion[0].variables) {
+                    let key = Object.keys(currentTuples).find(key => key.includes(variable));
+                    let pos = key.indexOf(variable)/2;
+                    conclusionVariables.push({variable: variable, pos: pos});
+                }
+
+                //If we still have multiple unrelated keys in currentTuples, we need to merge them, with a cartesian product
+                //TODO : This isn't efficient, there has to be a better way
+                if(Object.keys(currentTuples).length > 1) {
+                    let keys = Object.keys(currentTuples);
+                    let tempTuples = [];
+                    for(let tuple1 of currentTuples[keys[0]]) {
+                        for(let tuple2 of currentTuples[keys[1]]) {
+                            tempTuples.push(tuple1.concat(tuple2));
+                        }
+                    }
+                    currentTuples[keys[0] + keys[1]] = tempTuples;
+                    delete currentTuples[keys[0]];
+                    delete currentTuples[keys[1]];
+                }
+
+                //For each tuple of currentTuples, we are applying the conclusion
+                for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
+                    let node = tuple[conclusionVariables[0].pos];
+                    let relationName = rule.conclusion[0].parts[1];
+                    let newNode = tuple[conclusionVariables[1].pos];
+                    //Add the link to the graph
+                    if(!(relationName in this.graph[node].link)) {
+                        this.graph[node].link[relationName] = [];
+                    }
+                    //TODO : Should we also add negative link for the nodes that were filtered earlier ?
+                    //TODO : Should we add the opposite <0 link ?
+                    this.graph[node].link[relationName].push({node: newNode, weight: 1});
+                }
+            }
+        }
+    }
 }
 
 class Node {
@@ -581,10 +735,8 @@ class Node {
         return {
             word: "_BEGIN",
             link: {},
-            type: [],
             pos: 0,
-            separator: '',
-            nodeTpe : BEGIN
+            nodeType : BEGIN
         }
     }
 
@@ -592,7 +744,6 @@ class Node {
         return {
             word: "_END",
             link: {},
-            type: [],
             pos: pos,
             nodeType : END
         }
@@ -652,102 +803,96 @@ class Node {
 }
 
 
+class Rule {
+    constructor(rules) {
+        this.rulesString = rules;
+        this.rules = [];
 
-/**
- * Exemple of sentence variable
- * @param sentence
- * $x r_succ $y&$x r_pos NOM&$y r_pos ADJ => $y r_caracc $x; another rules ...
- */
-function analyzeRules(sentence) {
-    let conclusionRules = [];
-    let allRules = [];
-    let tableRules = sentence.split(";");
-    tableRules.forEach((item, i) => {
-        let rule = item.split("=>");
-        let condition = rule[0].split("&");
-        let oneCondition = [];
-        condition.forEach((item, i) => {
-            //each condition is stored in a same row that the same index in conclusionRules
-            let eachWord = item.split(" ");
-            //store anyRules into allRules
-            let filteredCondition = eachWord.filter(function (value, index, arr) {
-                return value != ''
+        let arrayRules = rules.split(";");
+        for (let rule of arrayRules) {
+            //Split the rule into its parts
+            let ruleParts = rule.split("=>");
+            let premises = this.sortPremise(ruleParts[0].split('&'));
+            //For each premise, transform the string into an object, containing the string, the array of variables and the number of variables
+            premises = premises.map(premise => {
+                let variables = Rule.getVariables(premise);
+                return {
+                    parts: premise.split(" ").filter(part => part !== ""),
+                    variables: variables,
+                    nbVariables: variables.length
+                }
             });
-            oneCondition.push(filteredCondition);
-        });
-        allRules.push(oneCondition);
-        //separe each Rules into allRules
-        let conclusion = rule[1].split(" ");
-        let filteredConclusion = conclusion.filter(function (value, index, arr) {
-            return value != ''
-        });
-        conclusionRules.push(filteredConclusion);
-    });
-    return [allRules, conclusionRules];
-}
-
-//function that sort the condition of rules, for have in first the condition with the relation r_pos
-function sortRules(oneCondtionRules){
-    let result = []
-    for (let rule of oneCondtionRules){
-        if(rule[1] === "r_pos"){
-            //We put in first the condition with the relation r_pos
-            result.unshift(rule)
-        } else {
-            //We put in last the condition with the other relation
-            result.push(rule)
+            //Make a set of all the variables in the premises
+            let variables = new Set();
+            for (let premise of premises) {
+                for (let variable of premise.variables) {
+                    variables.add(variable);
+                }
+            }
+            let conclusion = ruleParts[1].split('&');
+            //For each conclusion, transform the string into an object, containing the string, the array of variables and the number of variables
+            conclusion = conclusion.map(conclusion => {
+                let variables = Rule.getVariables(conclusion);
+                return {
+                    parts: conclusion.split(" ").filter(part => part !== ""),
+                    variables: variables,
+                    nbVariables: variables.length
+                }
+            });
+            this.rules.push({premises: premises, conclusion: conclusion, allVariables: Array.from(variables), rulesString: ruleParts[0]});
         }
     }
-    return result
-}
 
-//Function like interpret Rules in allRules, when one column is true, create in sentenceJson the relation in conclusionRules
-function interpretRules(allRules, conclusionRules, sentenceJSON) {
-    // for all rules into allRules
-    for (let i = 0; i < allRules.length; i++) {
-        let isTrue = true;
-        // for all conditions into one rule
-        let arrayCondition = {};
-        let oneCondtionRules = sortRules(allRules[i]);
-        for (let j = 0; j < oneCondtionRules.length; j++) {
-            //we store in an array all words that satisfy the condition
-            if (oneCondtionRules[j][1] === "r_pos") {
-                arrayCondition[oneCondtionRules[j][0]] = getWordType(oneCondtionRules[j][2], sentenceJSON);
+    //Sort premises by arity and r_pos
+    sortPremise(premise) {
+        //For each rule we figure out how many variables it has (start by $)
+        premise.sort((a, b) => {
+            let nbVariablesA = a.split("$");
+            let nbVariablesB = b.split("$");
+            if (nbVariablesA.length > nbVariablesB.length) {
+                return 1;
+            } else if (nbVariablesA.length < nbVariablesB.length) {
+                return -1;
+            } else {
+                //Check if the rule includes r_pos
+                if (a.includes("r_pos")) {
+                    return 1;
+                } else if (b.includes("r_pos")) {
+                    return -1;
+                } else {
+                    return 0;
+                }
             }
-            else{
-                let nameDict = oneCondtionRules[j][0] + oneCondtionRules[j][2];
-                arrayCondition[nameDict] = (getWordRelationWord(oneCondtionRules[j][1], sentenceJSON));
-            }
-        }
-        console.log(arrayCondition);
-        //we check the set of word where all conditions are true and we do the conclusion for him
-
-        let indexArray = [];
-
-        for (let k = 0; k < nameVariable.length; k++) {
-            indexArray.push(0);
-        }
-
-
+        });
+        return premise;
     }
-    return sentenceJSON;
+
+    static getVariables(premise) {
+        let variables = [];
+        premise.split(" ").forEach(word => {
+            if(word.startsWith("$") && !variables.includes(word)) {
+                variables.push(word);
+            }
+        });
+        return variables;
+    }
 }
 
 async function main() {
-    let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
+    //let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
+    let sentence = "chat rouge";
     let graph = await new Graph(sentence);
-    console.log(graph);
+    //console.log(JSON.stringify(graph, null, 4))
+    console.dir(graph, { depth: null })
 
-    // let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos NOM & $y r_pos ADJ => $y r_caracc $x; $x r_succ $y => $y r_caracc $x");
-    // console.log(getWordType('Adj', await sentenceJSON));
 
-    //let [rules, conclusion] = analyzeRules("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
-    //console.log(rules);
-    //console.log(sortRules(rules[0]));
-    //console.log(sentenceJSON);
-    //console.log(getWordType('Adj', sentenceJSON));
-    //interpretRules(rules, conclusion, sentenceJSON);
-    //console.log(getWordRelationWord('r_succ', await sentenceJSON));
+    //TODO : Il ne peut y avoir qu'une seule conclusion pour l'instant
+    let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x r_pos Nom & $z r_pos Adj => $x r_caracc $z; $x r_succ $y => $y r_succ<0 $x");
+    //let rules2 = new Rule("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
+
+    await graph.analyze(rules1);
+    //console.log(JSON.stringify(graph, null, 4))
+    console.dir(graph, { depth: null })
 }
 
 main().then(r => console.log("Done"));
