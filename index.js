@@ -417,7 +417,6 @@ class Graph {
     graph = {};
     id = 1; //Used to generate unique ids for nodes, position inside the graph
 
-    customNode = {};
     constructor(sentence) {
         return (async () => {
             //Start precise timer
@@ -747,32 +746,46 @@ class Graph {
                                     for(let groupVar of groupVarPos) {
                                         newWord += this.graph[tuple[groupVar[1]]].word;
                                     }
-                                    //Create a new composed words node
-                                    //We need to check if the node already exists
-                                    if(newWord in this.customNode) {
-                                        //We check if it's the exact same composed word
-                                        if(this.graph[this.customNode[newWord]].pos === beginPos && this.graph[this.customNode[newWord]].length === endPos - beginPos) {
+
+                                    //We check if it exists inside our graph, then inside JDM, and if it doesn't we create it
+                                    let node = Object.entries(this.graph).find(node => node[1].word == newWord);
+                                    if(node === undefined) {
+                                        try {
+                                            let jdmWord = await getWord(newWord);
+                                            this.id += 1;
+                                            let newNode = await Node.createNodeComposedWord(this.id, {word: newWord, pos: beginPos, length: endPos-beginPos});
                                             //We check if it already contains our type
-                                            if(!tail in this.graph[this.customNode[newWord]].type) {
+                                            if (!tail in newNode.type) {
                                                 //If it doesn't, we add it
-                                                this.graph[this.customNode[newWord]].type[tail] = 1;
+                                                newNode.type[tail] = 1;
                                             }
-                                        } else {
+                                            this.graph.push(newNode[1]);
+                                        } catch (e) {
                                             this.id+=1;
                                             let newNode = await Node.createNodeGroup(this.id, newWord, tail, beginPos, endPos);
-                                            this.customNode[newWord] = this.id;
                                             this.graph[this.id] = newNode[1];
-                                            //Connect the new node to the previous nodes
+                                            //TODO : Connect the new node to the previous nodes
                                             console.log(newNode);
-
                                         }
                                     } else {
-                                        this.id+=1;
-                                        let newNode = await Node.createNodeGroup(this.id, newWord, tail, beginPos, endPos);
-                                        this.customNode[newWord] = this.id;
-                                        this.graph[this.id] = newNode[1];
-                                        //TODO : Connect to past and next
-                                        console.log(newNode);
+                                        let nodeId = node[0];
+                                        // If it exists, we check if it's the same one, if not we create a new one
+                                        if(this.graph[nodeId].pos === beginPos) {
+                                            //We check if it already contains our type
+                                            if (!tail in this.graph[nodeId].type) {
+                                                //If it doesn't, we add it
+                                                this.graph[nodeId].type[tail] = 1;
+                                            }
+                                        } else {
+                                            let jdmWord = await getWord(newWord);
+                                            this.id += 1;
+                                            let newNode = await Node.createNodeComposedWord(this.id, {word: newWord, pos: beginPos, length: endPos-beginPos});
+                                            if (!tail in newNode.type) {
+                                                //If it doesn't, we add it
+                                                newNode.type[tail] = 1;
+                                            }
+                                            this.graph.push(newNode[1]);
+                                        }
                                     }
                                 }
                             } else {
@@ -971,7 +984,7 @@ async function main() {
 
     await graph.analyze(rules3);
     //console.log(JSON.stringify(graph, null, 4))
-    //console.dir(graph, { depth: null })
+    console.dir(graph, { depth: null })
 }
 
 main().then(r => console.log("Done"));
