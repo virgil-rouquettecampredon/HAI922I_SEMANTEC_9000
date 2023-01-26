@@ -544,7 +544,7 @@ class Graph {
         nodeList = nodeList.map(Number);
         let result = []
         for (let node in nodeList) {
-            if (this.graph[node].nodeType === WORD || this.graph[node].nodeType === COMPOSED_WORD || this.graph[node].nodeType === GROUP) {
+            if (this.graph[node].nodeType >= 0) {
                 for (const [t, w] of Object.entries(this.graph[node].type)) {
                     if(w>=0 && t.startsWith(type)) {
                         result.push(parseInt(node));
@@ -975,6 +975,7 @@ class Node {
             word: punctuation,
             pos: pos,
             link: {},
+            type: {"Ponctuation:": +Infinity},
             nodeType: PUNCTUATION
         }]
     }
@@ -1080,7 +1081,7 @@ class Rule {
 
 async function main() {
     //let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
-    let sentence = "le chat rouge";
+    let sentence = "Tristan regarde les étoiles avec un téléscope";
     let graph = await new Graph(sentence);
     //console.log(JSON.stringify(graph, null, 4))
     //console.dir(graph, { depth: null })
