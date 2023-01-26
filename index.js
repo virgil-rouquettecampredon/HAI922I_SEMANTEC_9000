@@ -844,7 +844,11 @@ class Graph {
                             }
                             break;
                         default:
-                            //throw new Error("Operator not supported yet");
+                            //We create new links between nodes with this kind of rules
+                            for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
+                                this.graph[tuple[positions[head]]].link[operator] = {node:tuple[positions[tail]], weight:1};
+                                this.graph[tuple[positions[tail]]].link[operator+">0"] = {node:tuple[positions[head]], weight:1};
+                            }
                     }
                 }
             }
