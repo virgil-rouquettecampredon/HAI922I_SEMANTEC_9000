@@ -727,8 +727,11 @@ class Graph {
                     let head = conclusion.parts[0];
                     let operator = conclusion.parts[1];
                     let tail = conclusion.parts[2];
+                    let weightModifier = 1;
 
                     switch (operator) {
+                        case "!=":
+                            weightModifier = -1;
                         case "==":
                             //Two cases, either we create a type or a new group, if it contains a + we know it's a new group
                             if (head.includes("+")) {
@@ -837,17 +840,63 @@ class Graph {
                             } else {
                                 for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
                                     let node = this.graph[tuple[positions[head]]];
-                                    if(!tail in node.type) {
-                                        node.type[tail] = 1;
+                                    if(!(tail in node.type)) {
+                                        node.type[tail] = weightModifier;
+                                    } else {
+                                        if(weightModifier==-1) {
+                                            node.type[tail] = weightModifier;
+                                        }
                                     }
                                 }
                             }
                             break;
                         default:
                             //We create new links between nodes with this kind of rules
+                            let w = 1;
+                            if(operator.includes("!")) {
+                                operator = operator.replace("!", "");
+                                w = -1;
+                            }
+
                             for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
-                                this.graph[tuple[positions[head]]].link[operator] = {node:tuple[positions[tail]], weight:1};
-                                this.graph[tuple[positions[tail]]].link[operator+">0"] = {node:tuple[positions[head]], weight:1};
+                                console.log(head);
+                                let linkHead = this.graph[tuple[positions[head]]].link;
+                                let linkTail = this.graph[tuple[positions[tail]]].link;
+
+                                if(!(operator in linkHead)) {
+                                    linkHead[operator] = [];
+                                    linkHead[operator].push({
+                                        node: tuple[positions[tail]],
+                                        weight: w
+                                    });
+                                } else {
+                                    let link = linkHead[operator].find(link => link.node == tuple[positions[tail]]);
+                                    if(link === undefined) {
+                                        linkHead[operator].push({
+                                            node: tuple[positions[tail]],
+                                            weight: w
+                                        });
+                                    } else {
+                                        link.weight = w;
+                                    }
+                                }
+                                if(!(operator+">0" in linkTail)) {
+                                    linkTail[operator+">0"] = [];
+                                    linkTail[operator+">0"].push({
+                                        node: tuple[positions[head]],
+                                        weight: w
+                                    });
+                                } else {
+                                    let link = linkTail[operator+">0"].find(link => link.node == tuple[positions[head]]);
+                                    if(link === undefined) {
+                                        linkTail[operator+">0"].push({
+                                            node: tuple[positions[head]],
+                                            weight: w
+                                        });
+                                    } else {
+                                        link.weight = w;
+                                    }
+                                }
                             }
                     }
                 }
@@ -1037,8 +1086,8 @@ async function main() {
     let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ<0 $x");
     //let rules2 = new Rule("$x r_succ $y & $x == Nom & $y == Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
     //Create new nodes as conclusion
-    let rules3 = new Rule('$x == Det & $y == Nom && $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z');
-    let rules4 = new Rule('$x == Det => $x = DETERMINANT');
+    let rules3 = new Rule('$x == Det & $y == Nom && $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z & $y !r_instrument $z & $z != INSTRUMENT:');
+    let rules4 = new Rule('$x == Det => $x == DETERMINANT:');
 
     await graph.analyze(rules3);
     //console.log(JSON.stringify(graph, null, 4))
