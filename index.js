@@ -431,10 +431,10 @@ class Graph {
             while (pos < sentence.length) {
                 //Handling punctuation
                 if ([" ", ",", ";", ":", "!", "?", "(", ")", "«", "»", "…", '"'].includes(sentence[pos])) {
-                    wordPromises.push(Node.createNodePunctuation(this.id, sentence[pos], pos));
+                    wordPromises.push(Node.createNodePunctuation(this.id, sentence[pos], pos+1));
                 } else {
                     //Creating a node from the word
-                    wordPromises.push(Node.createNodeWord(this.id, sentence[pos], pos));
+                    wordPromises.push(Node.createNodeWord(this.id, sentence[pos], pos+1));
                 }
                 pos += 1;
                 this.id += 1;
@@ -710,16 +710,17 @@ class Graph {
                     delete currentTuples[key2];
                 }
 
+                //We prune the redundant array in currentTuples to reduce complexity for new nodes
+                let onlyKey = Object.keys(currentTuples)[0];
+                currentTuples[onlyKey] = currentTuples[onlyKey].map(JSON.stringify).filter((e,i,a) => i === a.indexOf(e)).map(JSON.parse)
+
+
                 //Now we apply the conclusions
                 //First we find the position of each variable in currentTuple
                 let positions = {};
                 for(let variable of rule.allVariablesConclusion) {
                     positions[variable] = Object.keys(currentTuples).find(key => key.includes(variable)).indexOf(variable)/2;
                 }
-
-                //We prune the redundant array in currentTuples to reduce complexity for new nodes
-                let onlyKey = Object.keys(currentTuples)[0];
-                currentTuples[onlyKey] = currentTuples[onlyKey].map(JSON.stringify).filter((e,i,a) => i === a.indexOf(e)).map(JSON.parse)
 
                 //Then we apply the conclusions
                 for(let conclusion of rule.conclusion) {
@@ -730,11 +731,11 @@ class Graph {
                     switch (operator) {
                         case "==":
                             //Two cases, either we create a type or a new group, if it contains a + we know it's a new group
-                            if(head.includes("+")) {
+                            if (head.includes("+")) {
                                 let groupVariable = head.split("+");
                                 //We need to find the position of the group variable from positions
                                 let groupVarPos = [];
-                                for(let variable of groupVariable) {
+                                for (let variable of groupVariable) {
                                     groupVarPos.push([variable, positions[variable]]);
                                 }
 
@@ -742,35 +743,63 @@ class Graph {
                                 for (let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
                                     let newWord = "";
                                     let beginPos = tuple[groupVarPos[0][1]];
-                                    let endPos = tuple[groupVarPos[groupVarPos.length-1][1]];
-                                    for(let groupVar of groupVarPos) {
+                                    let endPos = tuple[groupVarPos[groupVarPos.length - 1][1]];
+                                    for (let groupVar of groupVarPos) {
                                         newWord += this.graph[tuple[groupVar[1]]].word;
                                     }
 
                                     //We check if it exists inside our graph, then inside JDM, and if it doesn't we create it
                                     let node = Object.entries(this.graph).find(node => node[1].word == newWord);
-                                    if(node === undefined) {
+                                    if (node === undefined) {
                                         try {
                                             let jdmWord = await getWord(newWord);
                                             this.id += 1;
-                                            let newNode = await Node.createNodeComposedWord(this.id, {word: newWord, pos: beginPos, length: endPos-beginPos});
+                                            let newNode = await Node.createNodeComposedWord(this.id, {
+                                                word: newWord,
+                                                pos: this.graph[beginPos].pos,
+                                                length: this.graph[endPos].pos - this.graph[beginPos].pos
+                                            });
                                             //We check if it already contains our type
                                             if (!tail in newNode.type) {
                                                 //If it doesn't, we add it
                                                 newNode.type[tail] = 1;
                                             }
+                                            //We plug it to the next and previous nodes
+                                            for(let link in this.graph[beginPos].link) {
+                                                if(link=="r_pred") {
+                                                    // TODO : Might not be a deep copy
+                                                    newNode[1].link["r_pred"] = this.graph[beginPos].link["r_pred"];
+                                                }
+                                            }
+                                            for(let link in this.graph[endPos].link) {
+                                                if(link=="r_succ") {
+                                                    // TODO : Might not be a deep copy
+                                                    newNode[1].link["r_succ"] = this.graph[endPos].link["r_succ"];
+                                                }
+                                            }
                                             this.graph.push(newNode[1]);
                                         } catch (e) {
-                                            this.id+=1;
-                                            let newNode = await Node.createNodeGroup(this.id, newWord, tail, beginPos, endPos);
+                                            this.id += 1;
+                                            let newNode = await Node.createNodeGroup(this.id, newWord, tail, this.graph[beginPos].pos, this.graph[endPos].pos);
                                             this.graph[this.id] = newNode[1];
-                                            //TODO : Connect the new node to the previous nodes
-                                            console.log(newNode);
+                                            //We plug it to the next and previous nodes
+                                            for(let link in this.graph[beginPos].link) {
+                                                if(link=="r_pred") {
+                                                    // TODO : Might not be a deep copy
+                                                    newNode[1].link["r_pred"] = this.graph[beginPos].link["r_pred"];
+                                                }
+                                            }
+                                            for(let link in this.graph[endPos].link) {
+                                                if(link=="r_succ") {
+                                                    // TODO : Might not be a deep copy
+                                                    newNode[1].link["r_succ"] = this.graph[endPos].link["r_succ"];
+                                                }
+                                            }
                                         }
                                     } else {
                                         let nodeId = node[0];
                                         // If it exists, we check if it's the same one, if not we create a new one
-                                        if(this.graph[nodeId].pos === beginPos) {
+                                        if (this.graph[nodeId].pos === beginPos) {
                                             //We check if it already contains our type
                                             if (!tail in this.graph[nodeId].type) {
                                                 //If it doesn't, we add it
@@ -779,18 +808,43 @@ class Graph {
                                         } else {
                                             let jdmWord = await getWord(newWord);
                                             this.id += 1;
-                                            let newNode = await Node.createNodeComposedWord(this.id, {word: newWord, pos: beginPos, length: endPos-beginPos});
+                                            let newNode = await Node.createNodeComposedWord(this.id, {
+                                                word: newWord,
+                                                pos: this.graph[beginPos].pos,
+                                                length: this.graph[endPos].pos - this.graph[beginPos].pos
+                                            });
                                             if (!tail in newNode.type) {
                                                 //If it doesn't, we add it
                                                 newNode.type[tail] = 1;
+                                            }
+                                            //We plug it to the next and previous nodes
+                                            for(let link in this.graph[beginPos].link) {
+                                                if(link=="r_pred") {
+                                                    // TODO : Might not be a deep copy
+                                                    newNode[1].link["r_pred"] = this.graph[beginPos].link["r_pred"];
+                                                }
+                                            }
+                                            for(let link in this.graph[endPos].link) {
+                                                if(link=="r_succ") {
+                                                    // TODO : Might not be a deep copy
+                                                    newNode[1].link["r_succ"] = this.graph[endPos].link["r_succ"];
+                                                }
                                             }
                                             this.graph.push(newNode[1]);
                                         }
                                     }
                                 }
                             } else {
-                                //We check if the type already exists
+                                for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
+                                    let node = this.graph[tuple[positions[head]]];
+                                    if(!tail in node.type) {
+                                        node.type[tail] = 1;
+                                    }
+                                }
                             }
+                            break;
+                        default:
+                            //throw new Error("Operator not supported yet");
                     }
                 }
             }
@@ -973,7 +1027,7 @@ async function main() {
     let sentence = "le chat rouge";
     let graph = await new Graph(sentence);
     //console.log(JSON.stringify(graph, null, 4))
-    console.dir(graph, { depth: null })
+    //console.dir(graph, { depth: null })
 
 
     let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ<0 $x");
