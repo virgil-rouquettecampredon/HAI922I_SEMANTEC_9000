@@ -584,9 +584,10 @@ class Graph {
 
     async analyze(rules) {
         //TODO : Adds all links, even if there are duplicates found (in case of refinement of nodes, need to make a choice)
+        //TODO : To simplify (but it will be slower, we will be comparing the whole graph as a String, instead of changing the boolean for each change we've made, this can be made faster
         let hasChanged = true;
         while (hasChanged) {
-            hasChanged = false;
+            let previousGraph = JSON.stringify(this.graph, null, 2);
             // We apply each rules to the graph
             for (let rule of rules.rules) {
                 let currentTuples = {};
@@ -901,6 +902,8 @@ class Graph {
                     }
                 }
             }
+            let newGraph = JSON.stringify(this.graph, null, 2);
+            hasChanged = newGraph !== previousGraph;
         }
     }
 }
