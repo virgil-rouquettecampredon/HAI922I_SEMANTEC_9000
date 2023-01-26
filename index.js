@@ -19,6 +19,7 @@ const cors = require("cors");
 const WORD = 0;
 const COMPOSED_WORD = 1;
 const PUNCTUATION = 2;
+const GROUP = 3;
 const BEGIN = -1;
 const END = -2;
 
@@ -415,6 +416,8 @@ async function executeInference(sentence) {
 class Graph {
     graph = {};
     id = 1; //Used to generate unique ids for nodes, position inside the graph
+
+    customNode = {};
     constructor(sentence) {
         return (async () => {
             //Start precise timer
@@ -539,16 +542,13 @@ class Graph {
 
     //returns all word of kind type
     getWordType(type, nodeList) {
+        nodeList = nodeList.map(Number);
         let result = []
         for (let node in nodeList) {
-            if (this.graph[node].nodeType === WORD || this.graph[node].nodeType === COMPOSED_WORD) {
-                for (let r_pos of this.graph[node].type) {
-                    if ('r_pos' in r_pos) {
-                        //TODO : Check if r_pos<0 is not more possible
-                        if (r_pos.r_pos.startsWith(type)) {
-                            //TODO : What do we do with the refinements
-                            result.push(node)
-                        }
+            if (this.graph[node].nodeType === WORD || this.graph[node].nodeType === COMPOSED_WORD || this.graph[node].nodeType === GROUP) {
+                for (const [t, w] of Object.entries(this.graph[node].type)) {
+                    if(w>=0 && t.startsWith(type)) {
+                        result.push(parseInt(node));
                     }
                 }
             }
@@ -557,12 +557,14 @@ class Graph {
     }
 
     getWordRelationWord(relation, nodeList1, nodeList2) {
+        nodeList1 = nodeList1.map(Number);
+        nodeList2 = nodeList2.map(Number);
         let result = []
         for (let node of nodeList1) {
             if (relation in this.graph[node].link) {
                 for (let nodeFound of this.graph[node].link[relation]) {
-                    if (nodeFound.node in nodeList2) {
-                        result.push([node, nodeFound.node])
+                    if (nodeList2.includes(parseInt(nodeFound.node))) {
+                        result.push([parseInt(node), parseInt(nodeFound.node)])
                     }
                 }
             }
@@ -582,26 +584,31 @@ class Graph {
     }
 
     async analyze(rules) {
-        //TODO : Adds all links, even if there are duplicates found (in case of raffinement of nodes, need to make a choice)
+        //TODO : Adds all links, even if there are duplicates found (in case of refinement of nodes, need to make a choice)
         let hasChanged = true;
         while (hasChanged) {
             hasChanged = false;
+            // We apply each rules to the graph
             for (let rule of rules.rules) {
                 let currentTuples = {};
                 for(let variable of rule.allVariables) {
+                    //For each variables in the rule head, we fill them with all possible answers
                     if (!(variable in currentTuples)) {
-                        currentTuples[variable] = Object.keys(this.graph);
+                        currentTuples[variable] = Object.keys(this.graph).map(Number);
                     }
                 }
+                // Then we start filtering the words that do no match the rule
                 for (let premise of rule.premises) {
                     // For rules of arity 1
                     if (premise.nbVariables === 1) {
-                        // For r_pos rules only
-                        if (premise.parts[1] === "r_pos") {
-                            currentTuples[premise.variables[0]] = this.getWordType(premise.parts[2], currentTuples[premise.variables[0]]);
-                        } else {
-                            console.log(premise);
-                            throw new Error("Only r_pos rules are supported for now");
+                        // For == rules only
+                        switch(premise.parts[1]) {
+                            case "==":
+                                currentTuples[premise.variables[0]] = this.getWordType(premise.parts[2], currentTuples[premise.variables[0]]);
+                                break;
+                            default:
+                                console.log(premise);
+                                throw new Error("Only r_pos and equals rules are supported for now");
                         }
                     // For rules of arity 2 or more
                     } else {
@@ -664,7 +671,6 @@ class Graph {
                                 delete currentTuples[key];
                                 delete currentTuples[var2];
                             } else {
-                                //TODO : Check if it does work
                                 //console.log(var1 + " " + var2 + " doesn't exist");
                                 // If both var1 and var2 are not in the current tuples, it means that they already exists as a merged tuples, so we simply need to filter the tuples that don't have our relation
                                 //Find the key that contains var1
@@ -676,54 +682,103 @@ class Graph {
                                 //Get its position in the key
                                 let pos2 = key2.indexOf(var2)/2;
                                 if(key1 !== key2) {
+                                    //If they are not the same key, it means they are not correlated so we are creating a cartesian product of both keys
                                     console.log(key1, key2);
-                                    throw new Error("The two variables are not in the same tuple");
+                                    currentTuples[key1 + key2] = [];
+                                    for(let tuple1 of currentTuples[key1]) {
+                                        for(let tuple2 of currentTuples[key2]) {
+                                            currentTuples[key1 + key2].push(tuple1.concat(tuple2));
+                                            delete currentTuples[key1];
+                                            delete currentTuples[key2];
+                                        }
+                                    }
                                 }
-                                currentTuples.filter(tuple => {
-                                    return this.graph[tuple[pos1]].link[relation].find(link => link.node === tuple[pos2]) !== undefined;
-                                });
                             }
                         }
-
-
                     }
                 }
-                //First we figure out which variable is in the conclusion and at which position
-                let conclusionVariables = [];
-                //TODO : Can only handle one conclusion for now
-                for (let variable of rule.conclusion[0].variables) {
-                    let key = Object.keys(currentTuples).find(key => key.includes(variable));
-                    let pos = key.indexOf(variable)/2;
-                    conclusionVariables.push({variable: variable, pos: pos});
-                }
-
                 //If we still have multiple unrelated keys in currentTuples, we need to merge them, with a cartesian product
-                //TODO : This isn't efficient, there has to be a better way
-                if(Object.keys(currentTuples).length > 1) {
-                    let keys = Object.keys(currentTuples);
-                    let tempTuples = [];
-                    for(let tuple1 of currentTuples[keys[0]]) {
-                        for(let tuple2 of currentTuples[keys[1]]) {
-                            tempTuples.push(tuple1.concat(tuple2));
+                while(Object.keys(currentTuples).length > 1) {
+                    let key1 = Object.keys(currentTuples)[0];
+                    let key2 = Object.keys(currentTuples)[1];
+                    currentTuples[key1 + key2] = [];
+                    for(let tuple1 of currentTuples[key1]) {
+                        for(let tuple2 of currentTuples[key2]) {
+                            currentTuples[key1 + key2].push(tuple1.concat(tuple2));
                         }
                     }
-                    currentTuples[keys[0] + keys[1]] = tempTuples;
-                    delete currentTuples[keys[0]];
-                    delete currentTuples[keys[1]];
+                    delete currentTuples[key1];
+                    delete currentTuples[key2];
                 }
 
-                //For each tuple of currentTuples, we are applying the conclusion
-                for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
-                    let node = tuple[conclusionVariables[0].pos];
-                    let relationName = rule.conclusion[0].parts[1];
-                    let newNode = tuple[conclusionVariables[1].pos];
-                    //Add the link to the graph
-                    if(!(relationName in this.graph[node].link)) {
-                        this.graph[node].link[relationName] = [];
+                //Now we apply the conclusions
+                //First we find the position of each variable in currentTuple
+                let positions = {};
+                for(let variable of rule.allVariablesConclusion) {
+                    positions[variable] = Object.keys(currentTuples).find(key => key.includes(variable)).indexOf(variable)/2;
+                }
+
+                //We prune the redundant array in currentTuples to reduce complexity for new nodes
+                let onlyKey = Object.keys(currentTuples)[0];
+                currentTuples[onlyKey] = currentTuples[onlyKey].map(JSON.stringify).filter((e,i,a) => i === a.indexOf(e)).map(JSON.parse)
+
+                //Then we apply the conclusions
+                for(let conclusion of rule.conclusion) {
+                    let head = conclusion.parts[0];
+                    let operator = conclusion.parts[1];
+                    let tail = conclusion.parts[2];
+
+                    switch (operator) {
+                        case "==":
+                            //Two cases, either we create a type or a new group, if it contains a + we know it's a new group
+                            if(head.includes("+")) {
+                                let groupVariable = head.split("+");
+                                //We need to find the position of the group variable from positions
+                                let groupVarPos = [];
+                                for(let variable of groupVariable) {
+                                    groupVarPos.push([variable, positions[variable]]);
+                                }
+
+                                //For each tuple in currentTuples, we create a new node with the group variable as name and the value of the tuple at the position of the group variable
+                                for (let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
+                                    let newWord = "";
+                                    let beginPos = tuple[groupVarPos[0][1]];
+                                    let endPos = tuple[groupVarPos[groupVarPos.length-1][1]];
+                                    for(let groupVar of groupVarPos) {
+                                        newWord += this.graph[tuple[groupVar[1]]].word;
+                                    }
+                                    //Create a new composed words node
+                                    //We need to check if the node already exists
+                                    if(newWord in this.customNode) {
+                                        //We check if it's the exact same composed word
+                                        if(this.graph[this.customNode[newWord]].pos === beginPos && this.graph[this.customNode[newWord]].length === endPos - beginPos) {
+                                            //We check if it already contains our type
+                                            if(!tail in this.graph[this.customNode[newWord]].type) {
+                                                //If it doesn't, we add it
+                                                this.graph[this.customNode[newWord]].type[tail] = 1;
+                                            }
+                                        } else {
+                                            this.id+=1;
+                                            let newNode = await Node.createNodeGroup(this.id, newWord, tail, beginPos, endPos);
+                                            this.customNode[newWord] = this.id;
+                                            this.graph[this.id] = newNode[1];
+                                            //Connect the new node to the previous nodes
+                                            console.log(newNode);
+
+                                        }
+                                    } else {
+                                        this.id+=1;
+                                        let newNode = await Node.createNodeGroup(this.id, newWord, tail, beginPos, endPos);
+                                        this.customNode[newWord] = this.id;
+                                        this.graph[this.id] = newNode[1];
+                                        //TODO : Connect to past and next
+                                        console.log(newNode);
+                                    }
+                                }
+                            } else {
+                                //We check if the type already exists
+                            }
                     }
-                    //TODO : Should we also add negative link for the nodes that were filtered earlier ?
-                    //TODO : Should we add the opposite <0 link ?
-                    this.graph[node].link[relationName].push({node: newNode, weight: 1});
                 }
             }
         }
@@ -778,6 +833,20 @@ class Node {
         }]
     }
 
+    static async createNodeGroup(id, word, type, begin, end) {
+        let typeObj = {}
+        typeObj[type] = 1;
+
+        return [id, {
+            word: word,
+            link: {},
+            type: typeObj,
+            pos: begin,
+            length: end-begin,
+            nodeType: GROUP
+        }]
+    }
+
     static async createNodePunctuation(id, punctuation, pos) {
         return [id, {
             word: punctuation,
@@ -789,13 +858,12 @@ class Node {
 
     static async getRpos(node) {
         let result = []
+        let arrayRpos = [];
+        let setRpos = new Set();
         for (let r of node.outgoingRelationship) {
             if (r.type == 4) {
-                if (r.weight > 0) {
-                    result.push({"r_pos": node.nodeTerms[r.node].name, "weight": r.weight});
-                } else {
-                    result.push({"r_pos<0": node.nodeTerms[r.node].name, "weight": r.weight});
-                }
+                //TODO : Ici on suppose qu'il n'y a qu'un seul poids par rpos possible
+                result[node.nodeTerms[r.node].name] = r.weight;
             }
         }
         return result
@@ -839,11 +907,18 @@ class Rule {
                     nbVariables: variables.length
                 }
             });
-            this.rules.push({premises: premises, conclusion: conclusion, allVariables: Array.from(variables), rulesString: ruleParts[0]});
+            //Make a set of all the variables in the conclusion
+            let variablesConclusion = new Set();
+            for (let conclu of conclusion) {
+                for (let variable of conclu.variables) {
+                    variablesConclusion.add(variable);
+                }
+            }
+            this.rules.push({premises: premises, conclusion: conclusion, allVariables: Array.from(variables), allVariablesConclusion: Array.from(variablesConclusion), rulesString: ruleParts[0], conclusionString: ruleParts[1]});
         }
     }
 
-    //Sort premises by arity and r_pos
+    //Sort premises by arity and ==
     sortPremise(premise) {
         //For each rule we figure out how many variables it has (start by $)
         premise.sort((a, b) => {
@@ -854,10 +929,10 @@ class Rule {
             } else if (nbVariablesA.length < nbVariablesB.length) {
                 return -1;
             } else {
-                //Check if the rule includes r_pos
-                if (a.includes("r_pos")) {
+                //Check if the rule includes ==
+                if (a.includes("==")) {
                     return 1;
-                } else if (b.includes("r_pos")) {
+                } else if (b.includes("==")) {
                     return -1;
                 } else {
                     return 0;
@@ -870,9 +945,11 @@ class Rule {
     static getVariables(premise) {
         let variables = [];
         premise.split(" ").forEach(word => {
-            if(word.startsWith("$") && !variables.includes(word)) {
-                variables.push(word);
-            }
+            word.split("+").forEach(word => {
+                if(word.startsWith("$") && !variables.includes(word)) {
+                    variables.push(word);
+                }
+            });
         });
         return variables;
     }
@@ -880,19 +957,21 @@ class Rule {
 
 async function main() {
     //let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
-    let sentence = "chat rouge";
+    let sentence = "le chat rouge";
     let graph = await new Graph(sentence);
     //console.log(JSON.stringify(graph, null, 4))
     console.dir(graph, { depth: null })
 
 
-    //TODO : Il ne peut y avoir qu'une seule conclusion pour l'instant
-    let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x r_pos Nom & $z r_pos Adj => $x r_caracc $z; $x r_succ $y => $y r_succ<0 $x");
-    //let rules2 = new Rule("$x r_succ $y & $x r_pos Nom & $y r_pos Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
+    let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ<0 $x");
+    //let rules2 = new Rule("$x r_succ $y & $x == Nom & $y == Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
+    //Create new nodes as conclusion
+    let rules3 = new Rule('$x == Det & $y == Nom && $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z');
+    let rules4 = new Rule('$x == Det => $x = DETERMINANT');
 
-    await graph.analyze(rules1);
+    await graph.analyze(rules3);
     //console.log(JSON.stringify(graph, null, 4))
-    console.dir(graph, { depth: null })
+    //console.dir(graph, { depth: null })
 }
 
 main().then(r => console.log("Done"));
