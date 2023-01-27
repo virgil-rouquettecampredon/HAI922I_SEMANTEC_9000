@@ -450,7 +450,7 @@ class Graph {
                     this.id = value[0];
                     //Plugging it to the previous node
                     this.graph[this.id - 1]["link"]["r_succ"] = [{node: this.id, weight: 1}];
-                    this.graph[this.id]["link"]["r_pred"] = [{node: this.id - 1, weight: 1}];
+                    this.graph[this.id]["link"]["r_succ-1"] = [{node: this.id - 1, weight: 1}];
                 }
             });
 
@@ -458,7 +458,7 @@ class Graph {
             this.id += 1;
             this.graph[this.id] = Node.createEndNode(this.id);
             this.graph[this.id - 1]["link"]["r_succ"] = [{node: this.id, weight: 1}];
-            this.graph[this.id]["link"]["r_pred"] = [{node: this.id - 1, weight: 1}];
+            this.graph[this.id]["link"]["r_succ-1"] = [{node: this.id - 1, weight: 1}];
             this.sentenceLength = this.id - 1;
 
             await this.addComposedWordsToGraph();
@@ -492,9 +492,9 @@ class Graph {
                 let composedWord = value[1];
                 //Plugging it to the previous node
                 this.graph[composedWord.pos-1]["link"]["r_succ"].push({node: this.id, weight: 1});
-                this.graph[this.id]["link"]["r_pred"] = [{node: composedWord.pos-1, weight: 1}];
+                this.graph[this.id]["link"]["r_succ-1"] = [{node: composedWord.pos-1, weight: 1}];
                 //Plugging it to the next node
-                this.graph[composedWord.pos+composedWord.length]["link"]["r_pred"].push({node: this.id, weight: 1});
+                this.graph[composedWord.pos+composedWord.length]["link"]["r_succ-1"].push({node: this.id, weight: 1});
                 this.graph[this.id]["link"]["r_succ"] = [{node: composedWord.pos+composedWord.length, weight: 1}];
             }
         });
@@ -770,9 +770,9 @@ class Graph {
                                             }
                                             //We plug it to the next and previous nodes
                                             for(let link in this.graph[beginPos].link) {
-                                                if(link=="r_pred") {
+                                                if(link=="r_succ-1") {
                                                     // TODO : Might not be a deep copy
-                                                    newNode[1].link["r_pred"] = this.graph[beginPos].link["r_pred"];
+                                                    newNode[1].link["r_succ-1"] = this.graph[beginPos].link["r_succ-1"];
                                                 }
                                             }
                                             for(let link in this.graph[endPos].link) {
@@ -788,9 +788,9 @@ class Graph {
                                             this.graph[this.id] = newNode[1];
                                             //We plug it to the next and previous nodes
                                             for(let link in this.graph[beginPos].link) {
-                                                if(link=="r_pred") {
+                                                if(link=="r_succ-1") {
                                                     // TODO : Might not be a deep copy
-                                                    newNode[1].link["r_pred"] = this.graph[beginPos].link["r_pred"];
+                                                    newNode[1].link["r_succ-1"] = this.graph[beginPos].link["r_succ-1"];
                                                 }
                                             }
                                             for(let link in this.graph[endPos].link) {
@@ -823,9 +823,9 @@ class Graph {
                                             }
                                             //We plug it to the next and previous nodes
                                             for(let link in this.graph[beginPos].link) {
-                                                if(link=="r_pred") {
+                                                if(link=="r_succ-1") {
                                                     // TODO : Might not be a deep copy
-                                                    newNode[1].link["r_pred"] = this.graph[beginPos].link["r_pred"];
+                                                    newNode[1].link["r_succ-1"] = this.graph[beginPos].link["r_succ-1"];
                                                 }
                                             }
                                             for(let link in this.graph[endPos].link) {
@@ -1087,7 +1087,7 @@ async function main() {
     //console.dir(graph, { depth: null })
 
 
-    let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ-1 $x");
+    let rules1 = new Rule("$x r_succ-1 $y & $y r_succ-1 $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ-1 $x");
     //let rules2 = new Rule("$x r_succ $y & $x == Nom & $y == Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
     //Create new nodes as conclusion
     let rules3 = new Rule('$x == Det & $y == Nom && $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z & $y !r_instrument $z & $z != INSTRUMENT:');
