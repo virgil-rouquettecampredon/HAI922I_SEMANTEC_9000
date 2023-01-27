@@ -881,16 +881,16 @@ class Graph {
                                         link.weight = w;
                                     }
                                 }
-                                if(!(operator+">0" in linkTail)) {
-                                    linkTail[operator+">0"] = [];
-                                    linkTail[operator+">0"].push({
+                                if(!(operator+"-1" in linkTail)) {
+                                    linkTail[operator+"-1"] = [];
+                                    linkTail[operator+"-1"].push({
                                         node: tuple[positions[head]],
                                         weight: w
                                     });
                                 } else {
-                                    let link = linkTail[operator+">0"].find(link => link.node == tuple[positions[head]]);
+                                    let link = linkTail[operator+"-1"].find(link => link.node == tuple[positions[head]]);
                                     if(link === undefined) {
-                                        linkTail[operator+">0"].push({
+                                        linkTail[operator+"-1"].push({
                                             node: tuple[positions[head]],
                                             weight: w
                                         });
@@ -1087,7 +1087,7 @@ async function main() {
     //console.dir(graph, { depth: null })
 
 
-    let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ<0 $x");
+    let rules1 = new Rule("$x r_pred $y & $y r_pred $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ-1 $x");
     //let rules2 = new Rule("$x r_succ $y & $x == Nom & $y == Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
     //Create new nodes as conclusion
     let rules3 = new Rule('$x == Det & $y == Nom && $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z & $y !r_instrument $z & $z != INSTRUMENT:');
