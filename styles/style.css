@@ -17,3 +17,10 @@ footer {
     margin-top: auto;
 	text-align:center;
 }
+
+#button-dl {
+    visibility: hidden;
+    margin:auto;
+    width:20vw;
+    height:5vh;
+}
