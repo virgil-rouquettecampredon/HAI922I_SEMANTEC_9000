@@ -1,0 +1,19 @@
+#sentence, #rules {
+	width:50vw;
+	margin:10px;
+}
+
+#rules {
+	height:20vw;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+footer {
+    margin-top: auto;
+	text-align:center;
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Semantec 9000 JDM</title>
+
+    <link rel="stylesheet" href="styles/style.css">
+</head>
+<body>
+	<form id="groupform" class="center well form-search" onsubmit="return false">
+		<label for="sentence">Texte à analyser : </label>
+		<br>
+		<input type="text" id="sentence" name="sentence" placeholder="Enter a sentence" value="Il regarde la fille avec un téléscope"></input>
+		<br>
+		<label for="rules"> Règles : </label>
+		<br>
+		<textarea type="text" id="rules" name="rules" placeholder="Enter rules"></textarea>
+		<br>
+		<button id="submit" class="btn btn-primary btn-large">Analyser</button>
+	</form>
+	<div id="explication_regles">
+		<b> Pour écrire des règles : </b>
+		<ul>
+			<li> Il vous faut utiliser un espace entre chaque opérateurs </li>
+			<li> Les règles se décomposent en deux parties, avec un "=>" pour séparer les hypothèses et les conclusions</li>
+			<li> Pour séparer chaque règles vous pouvez utiliser ";"</li>
+			<li> Pour séparer des hypothèses ou des conclusions vous pouvez utiliser "&"</li>
+			<li> Vous pouvez déclarer une variable avec "$x" ou x est un caractère quelconque</li>
+			<li> Vous pouvez spécifier le type d'un terme ou d'un groupe avec "==" ($x == GN ou $x == Adj)</li>
+			<li> Vous pouvez négativer des relations en préfixant "!" à la relation (par exemple : $x !r_succ $y)</li>
+			<li> Vous pouvez négativer des typages (de fonctions grammaticale ou de groupes) avec "!="</li>
+			<li> Vous pouvez créer un groupe de mots avec des "+" (sans espaces) "$x+$y == GN"</li>
+		</ul>
+		<div>
+			<h4> Voici un exemple : </h4>
+			<div> $x == Det & $y == Nom & $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z & $y !r_instrument $z & $z != INSTRUMENT: </div>
+		</div>
+	</div>
+    <div id="output"></div>
+
+    <footer class="center">
+        <h3>M2 MASTER IASD Faculté des Sciences de Montpellier</h3>
+        <h4>Virgil Rouquette--Campredon / Tristan Tribes</h4>
+        <h5>Projet d'analyseur sémantique en Langage naturel 2 utilisant <a href="http://www.jeuxdemots.org/rezo-dump.php">RezoDump</a></h5>
+    </footer>
+    <script src="./script.js"></script>
+</body>
+</html>

@@ -129,7 +129,7 @@ async function getWordFromHTML(html, id) {
 async function getWordFromRezoDump(word) {
     //Get the definition from the API with axios in windows-1252
     //Be careful with the URL encoding
-    let response = await axios.get(`http://www.jeuxdemots.org/rezo-dump.php?gotermsubmit=Chercher&gotermrel=${word}&rel=`, {
+    let response = await axios.get(`http://www.jeuxdemots.org/rezo-dump.php?gotermsubmit=Chercher&gotermrel=${encodeURI(word)}&rel=`, {
         responseType: 'arraybuffer'
     });
     const decodedData = iconv.decode(response.data, 'windows-1252');
@@ -860,7 +860,6 @@ class Graph {
                             }
 
                             for(let tuple of currentTuples[Object.keys(currentTuples)[0]]) {
-                                console.log(head);
                                 let linkHead = this.graph[tuple[positions[head]]].link;
                                 let linkTail = this.graph[tuple[positions[tail]]].link;
 
@@ -881,7 +880,7 @@ class Graph {
                                         link.weight = w;
                                     }
                                 }
-                                if(!(operator+"-1" in linkTail)) {
+                                /*if(!(operator+"-1" in linkTail)) {
                                     linkTail[operator+"-1"] = [];
                                     linkTail[operator+"-1"].push({
                                         node: tuple[positions[head]],
@@ -897,7 +896,7 @@ class Graph {
                                     } else {
                                         link.weight = w;
                                     }
-                                }
+                                }*/
                             }
                     }
                 }
@@ -928,7 +927,7 @@ class Node {
     }
 
     static async createNodeWord(id, word, pos) {
-        word = await getWord(word);
+        word =  await getWord(word);
         let type = await Node.getRpos(word);
 
         return [id, {
@@ -986,7 +985,6 @@ class Node {
         let setRpos = new Set();
         for (let r of node.outgoingRelationship) {
             if (r.type == 4) {
-                //TODO : Ici on suppose qu'il n'y a qu'un seul poids par rpos possible
                 result[node.nodeTerms[r.node].name] = r.weight;
             }
         }
@@ -1000,7 +998,7 @@ class Rule {
         this.rulesString = rules;
         this.rules = [];
 
-        let arrayRules = rules.split(";");
+        let arrayRules = rules.split(";").filter(rule => rule !== "");
         for (let rule of arrayRules) {
             //Split the rule into its parts
             let ruleParts = rule.split("=>");
@@ -1081,21 +1079,22 @@ class Rule {
 
 async function main() {
     //let sentence = `Tristan s'exclame dans le chat : "Le petit chat roux boit du lait... Il s'assoit, et mange sa nourriture : un poisson-chat. Il n'avait qu'à bien se tenir."`;
-    let sentence = "Tristan regarde les étoiles avec un téléscope";
-    let graph = await new Graph(sentence);
+    //let sentence = "Tristan regarde les étoiles avec un téléscope";
+    //let graph = await new Graph(sentence);
     //console.log(JSON.stringify(graph, null, 4))
     //console.dir(graph, { depth: null })
 
 
-    let rules1 = new Rule("$x r_succ-1 $y & $y r_succ-1 $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ-1 $x");
+    //let rules1 = new Rule("$x r_succ-1 $y & $y r_succ-1 $z & $x == Nom & $z == Adj => $x r_caracc $z; $x r_succ $y => $y r_succ-1 $x");
     //let rules2 = new Rule("$x r_succ $y & $x == Nom & $y == Adj => $y r_caracc $x; $w r_succ $z => $w r_caracc $z");
     //Create new nodes as conclusion
-    let rules3 = new Rule('$x == Det & $y == Nom && $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z & $y !r_instrument $z & $z != INSTRUMENT:');
-    let rules4 = new Rule('$x == Det => $x == DETERMINANT:');
+    //let rules3 = new Rule('$x == Det & $y == Nom & $z == Adj & $x r_succ $a & $a r_succ $y & $y r_succ $b & $b r_succ $z => $x+$a+$y == GNDET: & $x+$a+$y+$b+$z == GN: & $y r_qualifie $z & $y !r_instrument $z & $z != INSTRUMENT:');
+    //let rules4 = new Rule('$x == Det => $x == DETERMINANT:');
+    //let rules5 = new Rule('$x r_succ $y & $y r_succ $z & $y == Ponctuation => $x r_succ $z & $z r_succ-1 $x ;');
 
-    await graph.analyze(rules3);
+    //await graph.analyze(rules1);
     //console.log(JSON.stringify(graph, null, 4))
-    console.dir(graph, { depth: null })
+    //console.dir(graph, { depth: null })
 }
 
 main().then(r => console.log("Done"));
@@ -1105,36 +1104,53 @@ main().then(r => console.log("Done"));
  * Thread program to be scalable
  */
 
-// app.use(cors());
-//
-// app.post("/", jsonParser, (req, res) => {
-//     console.log(req.body);
-//     console.log(req.body.type);
-//     switch(req.body.type) {
-//         case "further":
-//             console.log("further");
-//             console.log(req.body.relation);
-//             console.log(req.body.position);
-//             searchFurther(req.body.relation, req.body.position).then(relations => {
-//                 res.send(relations);
-//             }).catch(err => {
-//                 console.log(err.error);
-//                 res.send({error: err.toString()});
-//             });
-//             break;
-//         case "inference":
-//             executeInference(req.body.sentence).then(relations => {
-//                 res.send(relations);
-//             }).catch(err => {
-//                 console.log(err.error);
-//                 res.send({error: err.toString()});
-//             });
-//             break;
-//         default:
-//             res.send({error : "Unknown type"});
-//     }
-// });
-//
-// app.listen(port, () => {
-//     console.log("Server started on port " + port);
-// });
+app.use(cors());
+app.post("/", jsonParser, async (req, res) => {
+    console.log(req.body);
+    console.log(req.body.type);
+    switch (req.body.type) {
+        case "further":
+            console.log(req.body.relation);
+            console.log(req.body.position);
+            searchFurther(req.body.relation, req.body.position).then(relations => {
+                res.send(relations);
+            }).catch(err => {
+                console.log(err.error);
+                res.send({error: err.toString()});
+            });
+            break;
+        case "inference":
+            executeInference(req.body.sentence).then(relations => {
+                res.send(relations);
+            }).catch(err => {
+                console.log(err.error);
+                res.send({error: err.toString()});
+            });
+            break;
+        case "sentence":
+            try {
+                console.log(req.body.sentence);
+                console.log(req.body.rules);
+                let startAnalysis = new Date().getTime();
+                let tempGraph = await new Graph(req.body.sentence);
+                let tempRules = new Rule(req.body.rules);
+                console.log(tempGraph);
+                console.log(tempRules);
+                tempGraph.analyze(tempRules).then(() => {
+                    let endAnalysis = new Date().getTime();
+                    res.send({graph: tempGraph, time: endAnalysis - startAnalysis});
+                    //console.dir(tempGraph, {depth: null});
+                    console.log("Analysis took " + (new Date().getTime() - startAnalysis) + "ms");
+                });
+            } catch (e) {
+                console.log(e);
+                res.send({error: e.toString()});
+            }
+            break;
+        default:
+            res.send({error: "Unknown type"});
+    }
+});
+app.listen(port, () => {
+    console.log("Server started on port " + port);
+});
